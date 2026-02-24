@@ -30,6 +30,8 @@ DOOR_THICKNESS = 0.12
 DOOR_FRAME_THICKNESS = 0.07
 DOOR_SLIDE_DISTANCE = 0.38
 DOOR_OPENING_HALF_WIDTH = 0.28
+ENEMY_HIT_ANGLE = math.radians(4.0)
+ENEMY_SHOOT_RANGE = 8.0
 
 
 @dataclass
@@ -48,6 +50,14 @@ class Door:
     orientation: str = "vertical"
     auto_close_timer: float = 0.0
     slide_sign: int = 1
+
+
+@dataclass
+class Enemy:
+    x: float
+    y: float
+    health: int = 3
+    alive: bool = True
 
 
 def tile_at(tx: int, ty: int) -> str:
@@ -112,6 +122,10 @@ def door_hit_kind(tx: int, ty: int, x: float, y: float, door: Door) -> int:
     if slab_half > 0.003 and abs(fy - center) <= slab_half:
         return 1
     return 0
+
+
+def normalize_angle(angle: float) -> float:
+    return (angle + math.pi) % (2.0 * math.pi) - math.pi
 
 
 def move_with_collision(player: Player, forward: float, strafe: float, dt: float, doors: dict[tuple[int, int], Door]) -> None:
@@ -255,6 +269,62 @@ def find_door_in_front(
     return None
 
 
+def try_shoot_enemy(player: Player, doors: dict[tuple[int, int], Door], enemy: Enemy) -> bool:
+    if not enemy.alive:
+        return False
+
+    dx = enemy.x - player.x
+    dy = enemy.y - player.y
+    distance = math.hypot(dx, dy)
+    if distance > ENEMY_SHOOT_RANGE:
+        return False
+
+    enemy_angle = math.atan2(dy, dx)
+    if abs(normalize_angle(enemy_angle - player.angle)) > ENEMY_HIT_ANGLE:
+        return False
+
+    wall_depth, _, _ = cast_ray(player.x, player.y, player.angle, doors)
+    if distance >= wall_depth - 0.05:
+        return False
+
+    enemy.health -= 1
+    if enemy.health <= 0:
+        enemy.alive = False
+    return True
+
+
+def render_enemy(
+    surface: pygame.Surface, enemy: Enemy, player: Player, fov: float, depth_buffer: list[float], w: int, h: int
+) -> None:
+    if not enemy.alive:
+        return
+
+    dx = enemy.x - player.x
+    dy = enemy.y - player.y
+    distance = math.hypot(dx, dy)
+    if distance <= 0.05:
+        return
+
+    angle = normalize_angle(math.atan2(dy, dx) - player.angle)
+    if abs(angle) > fov * 0.65:
+        return
+
+    screen_x = int((angle / fov + 0.5) * w)
+    sprite_h = max(8, min(int(h / distance), h))
+    sprite_w = max(4, sprite_h // 2)
+    top = (h - sprite_h) // 2
+    bottom = top + sprite_h
+    left = screen_x - sprite_w // 2
+    right = left + sprite_w
+
+    intensity = max(45, int(230 / (1.0 + distance * 0.18)))
+    body_color = (intensity, max(25, intensity // 4), max(25, intensity // 4))
+
+    for col in range(max(0, left), min(w, right)):
+        if distance < depth_buffer[col]:
+            pygame.draw.line(surface, body_color, (col, top), (col, bottom))
+
+
 def run(smoke_test: bool = False) -> None:
     if smoke_test:
         os.environ["SDL_VIDEODRIVER"] = "dummy"
@@ -264,13 +334,16 @@ def run(smoke_test: bool = False) -> None:
     internal_w, internal_h = 320, 200
     screen = pygame.display.set_mode((screen_w, screen_h))
     surface = pygame.Surface((internal_w, internal_h))
+    font = pygame.font.Font(None, 18)
     clock = pygame.time.Clock()
     pygame.display.set_caption("Wolf3D PoC - M1")
 
     fov = math.radians(60)
     player = Player()
+    enemy = Enemy(8.5, 3.5)
     doors = init_doors()
     show_minimap = True
+    hit_flash_timer = 0.0
 
     running = True
     frames = 0
@@ -296,6 +369,10 @@ def run(smoke_test: bool = False) -> None:
                         else:
                             door.target_open = True
                             door.auto_close_timer = DOOR_AUTO_CLOSE_DELAY
+                if event.key == pygame.K_f and try_shoot_enemy(player, doors, enemy):
+                    hit_flash_timer = 0.12
+            if event.type == pygame.MOUSEBUTTONDOWN and event.button == 1 and try_shoot_enemy(player, doors, enemy):
+                hit_flash_timer = 0.12
 
         keys = pygame.key.get_pressed()
         forward = (float(keys[pygame.K_w]) - float(keys[pygame.K_s])) + (
@@ -311,14 +388,17 @@ def run(smoke_test: bool = False) -> None:
         player.angle += turn * player.turn_speed * dt
         update_doors(doors, player, dt)
         move_with_collision(player, forward, strafe, dt, doors)
+        hit_flash_timer = max(0.0, hit_flash_timer - dt)
 
         surface.fill((35, 35, 40))
         pygame.draw.rect(surface, (70, 78, 102), (0, internal_h // 2, internal_w, internal_h // 2))
+        depth_buffer = [20.0] * internal_w
 
         for col in range(internal_w):
             ray_angle = player.angle - fov / 2.0 + (col / internal_w) * fov
             depth, shade, hit_kind = cast_ray(player.x, player.y, ray_angle, doors)
             corrected = depth * math.cos(ray_angle - player.angle)
+            depth_buffer[col] = corrected
             wall_h = min(int(internal_h / max(corrected, 0.0001)), internal_h)
 
             intensity = max(40, int(shade / (1.0 + corrected * 0.15)))
@@ -333,13 +413,26 @@ def run(smoke_test: bool = False) -> None:
             top = (internal_h - wall_h) // 2
             pygame.draw.line(surface, color, (col, top), (col, top + wall_h))
 
+        render_enemy(surface, enemy, player, fov, depth_buffer, internal_w, internal_h)
+
+        crosshair_color = (245, 245, 245) if hit_flash_timer <= 0.0 else (245, 120, 80)
         if find_door_in_front(player, doors) is not None:
-            cx, cy = internal_w // 2, internal_h // 2
-            pygame.draw.line(surface, (245, 190, 75), (cx - 4, cy), (cx + 4, cy), 1)
-            pygame.draw.line(surface, (245, 190, 75), (cx, cy - 4), (cx, cy + 4), 1)
+            crosshair_color = (245, 190, 75)
+
+        cx, cy = internal_w // 2, internal_h // 2
+        pygame.draw.line(surface, crosshair_color, (cx - 4, cy), (cx + 4, cy), 1)
+        pygame.draw.line(surface, crosshair_color, (cx, cy - 4), (cx, cy + 4), 1)
 
         if show_minimap:
             draw_minimap(surface, player, doors)
+            ex = int(6 + enemy.x * 8)
+            ey = int(6 + enemy.y * 8)
+            enemy_color = (170, 25, 25) if enemy.alive else (80, 80, 80)
+            pygame.draw.circle(surface, enemy_color, (ex, ey), 2)
+
+        hud_text = "Enemy: down" if not enemy.alive else f"Enemy HP: {enemy.health}  (F or LMB to shoot)"
+        hud_surface = font.render(hud_text, True, (220, 220, 225))
+        surface.blit(hud_surface, (6, internal_h - 14))
 
         scaled = pygame.transform.scale(surface, (screen_w, screen_h))
         screen.blit(scaled, (0, 0))

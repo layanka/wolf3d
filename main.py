@@ -3,6 +3,7 @@ from __future__ import annotations
 import argparse
 import math
 import os
+from array import array
 from dataclasses import dataclass
 
 import pygame
@@ -35,6 +36,8 @@ ENEMY_SHOOT_RANGE = 8.0
 WEAPON_COOLDOWN = 0.24
 WEAPON_RECOIL_DURATION = 0.12
 MUZZLE_FLASH_DURATION = 0.08
+SFX_SAMPLE_RATE = 22050
+TRACER_DURATION = 0.07
 
 
 @dataclass
@@ -61,6 +64,47 @@ class Enemy:
     y: float
     health: int = 3
     alive: bool = True
+
+
+@dataclass
+class ShotTrace:
+    timer: float = 0.0
+    distance: float = 0.0
+    hit_enemy: bool = False
+
+
+class AudioManager:
+    def __init__(self) -> None:
+        self.enabled = False
+        self.sounds: dict[str, pygame.mixer.Sound] = {}
+        try:
+            pygame.mixer.init(frequency=SFX_SAMPLE_RATE, size=-16, channels=1)
+            self.sounds["shoot"] = synth_tone(140, 0.07, 0.30, decay=6.0)
+            self.sounds["hit"] = synth_tone(520, 0.05, 0.28, decay=10.0)
+            self.sounds["down"] = synth_tone(110, 0.16, 0.34, decay=4.5)
+            self.sounds["door"] = synth_tone(260, 0.10, 0.20, decay=3.5)
+            self.enabled = True
+        except pygame.error:
+            self.enabled = False
+
+    def play(self, name: str) -> None:
+        if not self.enabled:
+            return
+        sound = self.sounds.get(name)
+        if sound is not None:
+            sound.play()
+
+
+def synth_tone(frequency: float, duration: float, volume: float, decay: float = 8.0) -> pygame.mixer.Sound:
+    sample_count = max(1, int(SFX_SAMPLE_RATE * duration))
+    data = array("h")
+    amplitude = int(32767 * max(0.0, min(1.0, volume)))
+    for i in range(sample_count):
+        t = i / SFX_SAMPLE_RATE
+        env = math.exp(-decay * t)
+        value = int(amplitude * env * math.sin(2.0 * math.pi * frequency * t))
+        data.append(value)
+    return pygame.mixer.Sound(buffer=data.tobytes())
 
 
 def tile_at(tx: int, ty: int) -> str:
@@ -296,6 +340,26 @@ def try_shoot_enemy(player: Player, doors: dict[tuple[int, int], Door], enemy: E
     return True
 
 
+def compute_enemy_shot_distance(player: Player, doors: dict[tuple[int, int], Door], enemy: Enemy) -> float | None:
+    if not enemy.alive:
+        return None
+
+    dx = enemy.x - player.x
+    dy = enemy.y - player.y
+    distance = math.hypot(dx, dy)
+    if distance > ENEMY_SHOOT_RANGE:
+        return None
+
+    enemy_angle = math.atan2(dy, dx)
+    if abs(normalize_angle(enemy_angle - player.angle)) > ENEMY_HIT_ANGLE:
+        return None
+
+    wall_depth, _, _ = cast_ray(player.x, player.y, player.angle, doors)
+    if distance >= wall_depth - 0.05:
+        return None
+    return distance
+
+
 def render_enemy(
     surface: pygame.Surface, enemy: Enemy, player: Player, fov: float, depth_buffer: list[float], w: int, h: int
 ) -> None:
@@ -330,11 +394,19 @@ def render_enemy(
 
 def attempt_fire(
     cooldown_timer: float, player: Player, doors: dict[tuple[int, int], Door], enemy: Enemy
-) -> tuple[float, bool, bool]:
+) -> tuple[float, bool, bool, bool, float]:
     if cooldown_timer > 0.0:
-        return cooldown_timer, False, False
-    hit_enemy = try_shoot_enemy(player, doors, enemy)
-    return WEAPON_COOLDOWN, True, hit_enemy
+        return cooldown_timer, False, False, False, 0.0
+    wall_depth, _, _ = cast_ray(player.x, player.y, player.angle, doors)
+    hit_distance = wall_depth
+
+    enemy_distance = compute_enemy_shot_distance(player, doors, enemy)
+    alive_before = enemy.alive
+    hit_enemy = enemy_distance is not None and try_shoot_enemy(player, doors, enemy)
+    if enemy_distance is not None:
+        hit_distance = min(hit_distance, enemy_distance)
+    enemy_down = alive_before and not enemy.alive
+    return WEAPON_COOLDOWN, True, hit_enemy, enemy_down, hit_distance
 
 
 def draw_weapon_overlay(
@@ -368,6 +440,23 @@ def draw_weapon_overlay(
         )
 
 
+def draw_shot_trace(surface: pygame.Surface, w: int, h: int, trace: ShotTrace) -> None:
+    if trace.timer <= 0.0:
+        return
+
+    fade = min(1.0, trace.timer / TRACER_DURATION) if TRACER_DURATION > 0 else 0.0
+    beam_color = (255, 245, 170) if trace.hit_enemy else (235, 210, 120)
+    impact_color = (255, 140, 90) if trace.hit_enemy else (240, 230, 190)
+
+    cx, cy = w // 2, h // 2
+    start = (cx, int(h * 0.86))
+    end = (cx, cy)
+    pygame.draw.line(surface, beam_color, start, end, 1 if fade < 0.5 else 2)
+
+    impact_radius = max(1, min(5, int(8.0 / max(trace.distance, 0.25))))
+    pygame.draw.circle(surface, impact_color, end, impact_radius)
+
+
 def run(smoke_test: bool = False) -> None:
     if smoke_test:
         os.environ["SDL_VIDEODRIVER"] = "dummy"
@@ -378,6 +467,7 @@ def run(smoke_test: bool = False) -> None:
     screen = pygame.display.set_mode((screen_w, screen_h))
     surface = pygame.Surface((internal_w, internal_h))
     font = pygame.font.Font(None, 18)
+    audio = AudioManager()
     clock = pygame.time.Clock()
     pygame.display.set_caption("Wolf3D PoC - M1")
 
@@ -390,6 +480,7 @@ def run(smoke_test: bool = False) -> None:
     shot_cooldown_timer = 0.0
     recoil_timer = 0.0
     muzzle_flash_timer = 0.0
+    shot_trace = ShotTrace()
 
     running = True
     frames = 0
@@ -415,20 +506,35 @@ def run(smoke_test: bool = False) -> None:
                         else:
                             door.target_open = True
                             door.auto_close_timer = DOOR_AUTO_CLOSE_DELAY
+                        audio.play("door")
                 if event.key == pygame.K_f:
-                    shot_cooldown_timer, did_fire, did_hit = attempt_fire(shot_cooldown_timer, player, doors, enemy)
+                    shot_cooldown_timer, did_fire, did_hit, did_down, trace_distance = attempt_fire(
+                        shot_cooldown_timer, player, doors, enemy
+                    )
                     if did_fire:
                         recoil_timer = WEAPON_RECOIL_DURATION
                         muzzle_flash_timer = MUZZLE_FLASH_DURATION
+                        shot_trace = ShotTrace(timer=TRACER_DURATION, distance=trace_distance, hit_enemy=did_hit)
+                        audio.play("shoot")
                     if did_hit:
                         hit_flash_timer = 0.12
+                        audio.play("hit")
+                    if did_down:
+                        audio.play("down")
             if event.type == pygame.MOUSEBUTTONDOWN and event.button == 1:
-                shot_cooldown_timer, did_fire, did_hit = attempt_fire(shot_cooldown_timer, player, doors, enemy)
+                shot_cooldown_timer, did_fire, did_hit, did_down, trace_distance = attempt_fire(
+                    shot_cooldown_timer, player, doors, enemy
+                )
                 if did_fire:
                     recoil_timer = WEAPON_RECOIL_DURATION
                     muzzle_flash_timer = MUZZLE_FLASH_DURATION
+                    shot_trace = ShotTrace(timer=TRACER_DURATION, distance=trace_distance, hit_enemy=did_hit)
+                    audio.play("shoot")
                 if did_hit:
                     hit_flash_timer = 0.12
+                    audio.play("hit")
+                if did_down:
+                    audio.play("down")
 
         keys = pygame.key.get_pressed()
         forward = (float(keys[pygame.K_w]) - float(keys[pygame.K_s])) + (
@@ -448,6 +554,7 @@ def run(smoke_test: bool = False) -> None:
         shot_cooldown_timer = max(0.0, shot_cooldown_timer - dt)
         recoil_timer = max(0.0, recoil_timer - dt)
         muzzle_flash_timer = max(0.0, muzzle_flash_timer - dt)
+        shot_trace.timer = max(0.0, shot_trace.timer - dt)
 
         surface.fill((35, 35, 40))
         pygame.draw.rect(surface, (70, 78, 102), (0, internal_h // 2, internal_w, internal_h // 2))
@@ -473,6 +580,7 @@ def run(smoke_test: bool = False) -> None:
             pygame.draw.line(surface, color, (col, top), (col, top + wall_h))
 
         render_enemy(surface, enemy, player, fov, depth_buffer, internal_w, internal_h)
+        draw_shot_trace(surface, internal_w, internal_h, shot_trace)
 
         crosshair_color = (245, 245, 245) if hit_flash_timer <= 0.0 else (245, 120, 80)
         if find_door_in_front(player, doors) is not None:

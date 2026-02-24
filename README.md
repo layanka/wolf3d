@@ -35,6 +35,7 @@ Door behavior:
 - Doors auto-close after a short delay.
 - Doors stay open while you are in or near the doorway.
 - Doors are rendered as a thin sliding slab with a darker frame and fixed side posts.
+- Weapon uses a hitscan model with a short-lived visual tracer and impact spark.
 
 Expected visuals:
 - Blue-gray floor/ceiling bands
@@ -46,6 +47,7 @@ Expected visuals:
 - Enemy marker on minimap (red when alive, gray when down)
 - Small center reticle appears when aiming at an interactable door
 - Bottom-center weapon overlay with recoil and muzzle flash on fire
+- Placeholder synthesized SFX for shooting, hits, enemy down, and door interaction
 
 ### Smoke test
 

@@ -45,6 +45,7 @@ Expected visuals:
 - Door tiles shown in amber on the minimap (brighter when open)
 - Enemy marker on minimap (red when alive, gray when down)
 - Small center reticle appears when aiming at an interactable door
+- Bottom-center weapon overlay with recoil and muzzle flash on fire
 
 ### Smoke test
 

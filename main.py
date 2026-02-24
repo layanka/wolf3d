@@ -32,6 +32,9 @@ DOOR_SLIDE_DISTANCE = 0.38
 DOOR_OPENING_HALF_WIDTH = 0.28
 ENEMY_HIT_ANGLE = math.radians(4.0)
 ENEMY_SHOOT_RANGE = 8.0
+WEAPON_COOLDOWN = 0.24
+WEAPON_RECOIL_DURATION = 0.12
+MUZZLE_FLASH_DURATION = 0.08
 
 
 @dataclass
@@ -325,6 +328,46 @@ def render_enemy(
             pygame.draw.line(surface, body_color, (col, top), (col, bottom))
 
 
+def attempt_fire(
+    cooldown_timer: float, player: Player, doors: dict[tuple[int, int], Door], enemy: Enemy
+) -> tuple[float, bool, bool]:
+    if cooldown_timer > 0.0:
+        return cooldown_timer, False, False
+    hit_enemy = try_shoot_enemy(player, doors, enemy)
+    return WEAPON_COOLDOWN, True, hit_enemy
+
+
+def draw_weapon_overlay(
+    surface: pygame.Surface, w: int, h: int, recoil_timer: float, muzzle_flash_timer: float
+) -> None:
+    recoil_ratio = min(1.0, recoil_timer / WEAPON_RECOIL_DURATION) if WEAPON_RECOIL_DURATION > 0.0 else 0.0
+    recoil_drop = int(10 * recoil_ratio)
+    recoil_kick = int(4 * recoil_ratio)
+
+    gun_w = int(w * 0.36)
+    gun_h = int(h * 0.28)
+    gun_x = (w - gun_w) // 2 + recoil_kick
+    gun_y = h - gun_h + recoil_drop
+
+    pygame.draw.rect(surface, (34, 34, 42), (gun_x, gun_y, gun_w, gun_h))
+    barrel_w = int(gun_w * 0.24)
+    barrel_h = int(gun_h * 0.52)
+    barrel_x = (w - barrel_w) // 2 + recoil_kick
+    barrel_y = gun_y - barrel_h + int(gun_h * 0.2)
+    pygame.draw.rect(surface, (62, 62, 72), (barrel_x, barrel_y, barrel_w, barrel_h))
+
+    if muzzle_flash_timer > 0.0:
+        flash_w = int(barrel_w * 1.8)
+        flash_h = int(barrel_h * 0.9)
+        flash_x = (w - flash_w) // 2 + recoil_kick
+        flash_y = barrel_y - flash_h + 2
+        pygame.draw.polygon(
+            surface,
+            (245, 210, 90),
+            [(flash_x, flash_y + flash_h), (flash_x + flash_w // 2, flash_y), (flash_x + flash_w, flash_y + flash_h)],
+        )
+
+
 def run(smoke_test: bool = False) -> None:
     if smoke_test:
         os.environ["SDL_VIDEODRIVER"] = "dummy"
@@ -344,6 +387,9 @@ def run(smoke_test: bool = False) -> None:
     doors = init_doors()
     show_minimap = True
     hit_flash_timer = 0.0
+    shot_cooldown_timer = 0.0
+    recoil_timer = 0.0
+    muzzle_flash_timer = 0.0
 
     running = True
     frames = 0
@@ -369,10 +415,20 @@ def run(smoke_test: bool = False) -> None:
                         else:
                             door.target_open = True
                             door.auto_close_timer = DOOR_AUTO_CLOSE_DELAY
-                if event.key == pygame.K_f and try_shoot_enemy(player, doors, enemy):
+                if event.key == pygame.K_f:
+                    shot_cooldown_timer, did_fire, did_hit = attempt_fire(shot_cooldown_timer, player, doors, enemy)
+                    if did_fire:
+                        recoil_timer = WEAPON_RECOIL_DURATION
+                        muzzle_flash_timer = MUZZLE_FLASH_DURATION
+                    if did_hit:
+                        hit_flash_timer = 0.12
+            if event.type == pygame.MOUSEBUTTONDOWN and event.button == 1:
+                shot_cooldown_timer, did_fire, did_hit = attempt_fire(shot_cooldown_timer, player, doors, enemy)
+                if did_fire:
+                    recoil_timer = WEAPON_RECOIL_DURATION
+                    muzzle_flash_timer = MUZZLE_FLASH_DURATION
+                if did_hit:
                     hit_flash_timer = 0.12
-            if event.type == pygame.MOUSEBUTTONDOWN and event.button == 1 and try_shoot_enemy(player, doors, enemy):
-                hit_flash_timer = 0.12
 
         keys = pygame.key.get_pressed()
         forward = (float(keys[pygame.K_w]) - float(keys[pygame.K_s])) + (
@@ -389,6 +445,9 @@ def run(smoke_test: bool = False) -> None:
         update_doors(doors, player, dt)
         move_with_collision(player, forward, strafe, dt, doors)
         hit_flash_timer = max(0.0, hit_flash_timer - dt)
+        shot_cooldown_timer = max(0.0, shot_cooldown_timer - dt)
+        recoil_timer = max(0.0, recoil_timer - dt)
+        muzzle_flash_timer = max(0.0, muzzle_flash_timer - dt)
 
         surface.fill((35, 35, 40))
         pygame.draw.rect(surface, (70, 78, 102), (0, internal_h // 2, internal_w, internal_h // 2))
@@ -430,7 +489,14 @@ def run(smoke_test: bool = False) -> None:
             enemy_color = (170, 25, 25) if enemy.alive else (80, 80, 80)
             pygame.draw.circle(surface, enemy_color, (ex, ey), 2)
 
-        hud_text = "Enemy: down" if not enemy.alive else f"Enemy HP: {enemy.health}  (F or LMB to shoot)"
+        draw_weapon_overlay(surface, internal_w, internal_h, recoil_timer, muzzle_flash_timer)
+
+        weapon_state = "READY" if shot_cooldown_timer <= 0.0 else "COOLDOWN"
+        hud_text = (
+            f"Enemy: down  Weapon: {weapon_state}"
+            if not enemy.alive
+            else f"Enemy HP: {enemy.health}  Weapon: {weapon_state}  (F or LMB to shoot)"
+        )
         hud_surface = font.render(hud_text, True, (220, 220, 225))
         surface.blit(hud_surface, (6, internal_h - 14))
 

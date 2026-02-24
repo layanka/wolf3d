@@ -30,6 +30,11 @@ UV_CACHE_DIR=.uv-cache uv run python main.py
 - `M`: toggle minimap
 - `Esc`: quit
 
+Door behavior:
+- Doors auto-close after a short delay.
+- Doors stay open while you are in or near the doorway.
+- Doors are rendered as a thin sliding slab with a darker frame and fixed side posts.
+
 Expected visuals:
 - Blue-gray floor/ceiling bands
 - Vertical wall slices with depth shading

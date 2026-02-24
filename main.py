@@ -24,6 +24,12 @@ WORLD_MAP = [
 WALL_TILE = "1"
 DOOR_TILE = "2"
 DOOR_SPEED = 1.8
+DOOR_AUTO_CLOSE_DELAY = 2.0
+DOOR_HOLD_DISTANCE = 0.95
+DOOR_THICKNESS = 0.12
+DOOR_FRAME_THICKNESS = 0.07
+DOOR_SLIDE_DISTANCE = 0.38
+DOOR_OPENING_HALF_WIDTH = 0.28
 
 
 @dataclass
@@ -40,6 +46,8 @@ class Door:
     open_amount: float = 0.0
     target_open: bool = False
     orientation: str = "vertical"
+    auto_close_timer: float = 0.0
+    slide_sign: int = 1
 
 
 def tile_at(tx: int, ty: int) -> str:
@@ -62,16 +70,48 @@ def is_blocked(x: float, y: float, doors: dict[tuple[int, int], Door]) -> bool:
 
 
 def door_blocks_point(tx: int, ty: int, x: float, y: float, door: Door) -> bool:
-    openness = max(0.0, min(1.0, door.open_amount))
-    half_span = 0.48 * (1.0 - openness)
-    if half_span <= 0.01:
-        return False
-
     fx = x - tx
     fy = y - ty
+    slab_half = (DOOR_THICKNESS * 0.5) * (1.0 - door.open_amount)
+    if slab_half <= 0.003:
+        return False
+
     if door.orientation == "vertical":
-        return abs(fx - 0.5) <= half_span
-    return abs(fy - 0.5) <= half_span
+        if abs(fy - 0.5) > DOOR_OPENING_HALF_WIDTH:
+            return True
+        if fy <= DOOR_FRAME_THICKNESS or fy >= 1.0 - DOOR_FRAME_THICKNESS:
+            return True
+        center = 0.5 + door.slide_sign * door.open_amount * DOOR_SLIDE_DISTANCE
+        return abs(fx - center) <= slab_half
+    if abs(fx - 0.5) > DOOR_OPENING_HALF_WIDTH:
+        return True
+    if fx <= DOOR_FRAME_THICKNESS or fx >= 1.0 - DOOR_FRAME_THICKNESS:
+        return True
+    center = 0.5 + door.slide_sign * door.open_amount * DOOR_SLIDE_DISTANCE
+    return abs(fy - center) <= slab_half
+
+
+def door_hit_kind(tx: int, ty: int, x: float, y: float, door: Door) -> int:
+    fx = x - tx
+    fy = y - ty
+    slab_half = (DOOR_THICKNESS * 0.5) * (1.0 - door.open_amount)
+    if door.orientation == "vertical":
+        if abs(fy - 0.5) > DOOR_OPENING_HALF_WIDTH:
+            return 2
+        if fy <= DOOR_FRAME_THICKNESS or fy >= 1.0 - DOOR_FRAME_THICKNESS:
+            return 2
+        center = 0.5 + door.slide_sign * door.open_amount * DOOR_SLIDE_DISTANCE
+        if slab_half > 0.003 and abs(fx - center) <= slab_half:
+            return 1
+        return 0
+    if abs(fx - 0.5) > DOOR_OPENING_HALF_WIDTH:
+        return 2
+    if fx <= DOOR_FRAME_THICKNESS or fx >= 1.0 - DOOR_FRAME_THICKNESS:
+        return 2
+    center = 0.5 + door.slide_sign * door.open_amount * DOOR_SLIDE_DISTANCE
+    if slab_half > 0.003 and abs(fy - center) <= slab_half:
+        return 1
+    return 0
 
 
 def move_with_collision(player: Player, forward: float, strafe: float, dt: float, doors: dict[tuple[int, int], Door]) -> None:
@@ -92,7 +132,7 @@ def move_with_collision(player: Player, forward: float, strafe: float, dt: float
 
 def cast_ray(
     px: float, py: float, ray_angle: float, doors: dict[tuple[int, int], Door], max_depth: float = 20.0
-) -> tuple[float, int, bool]:
+) -> tuple[float, int, int]:
     sin_a = math.sin(ray_angle)
     cos_a = math.cos(ray_angle)
     depth = 0.0
@@ -106,10 +146,14 @@ def cast_ray(
         tile = tile_at(tx, ty)
         if tile == WALL_TILE:
             shade = 180 if int(test_x * 2) % 2 == 0 else 220
-            return depth, shade, False
-        if tile == DOOR_TILE and door_blocks_point(tx, ty, test_x, test_y, doors[(tx, ty)]):
-            return depth, 235, True
-    return max_depth, 120, False
+            return depth, shade, 0
+        if tile == DOOR_TILE:
+            hit_kind = door_hit_kind(tx, ty, test_x, test_y, doors[(tx, ty)])
+            if hit_kind == 2:
+                return depth, 155, 2
+            if hit_kind == 1:
+                return depth, 235, 1
+    return max_depth, 120, 0
 
 
 def draw_minimap(surface: pygame.Surface, player: Player, doors: dict[tuple[int, int], Door], scale: int = 8) -> None:
@@ -154,7 +198,11 @@ def init_doors() -> dict[tuple[int, int], Door]:
                     orientation = "horizontal"
                 else:
                     orientation = "vertical"
-                doors[(x, y)] = Door(orientation=orientation)
+                if orientation == "vertical":
+                    slide_sign = 1 if tile_at(x + 1, y) != WALL_TILE else -1
+                else:
+                    slide_sign = 1 if tile_at(x, y + 1) != WALL_TILE else -1
+                doors[(x, y)] = Door(orientation=orientation, slide_sign=slide_sign)
     return doors
 
 
@@ -162,15 +210,29 @@ def player_in_door_tile(player: Player, door_pos: tuple[int, int]) -> bool:
     return int(player.x) == door_pos[0] and int(player.y) == door_pos[1]
 
 
+def player_near_door(player: Player, door_pos: tuple[int, int], hold_distance: float = DOOR_HOLD_DISTANCE) -> bool:
+    dx = player.x - (door_pos[0] + 0.5)
+    dy = player.y - (door_pos[1] + 0.5)
+    return (dx * dx + dy * dy) <= hold_distance * hold_distance
+
+
 def update_doors(doors: dict[tuple[int, int], Door], player: Player, dt: float) -> None:
     delta = DOOR_SPEED * dt
     for door_pos, door in doors.items():
         if door.target_open:
             door.open_amount = min(1.0, door.open_amount + delta)
+            if door.open_amount >= 0.999:
+                if player_near_door(player, door_pos):
+                    door.auto_close_timer = DOOR_AUTO_CLOSE_DELAY
+                else:
+                    door.auto_close_timer = max(0.0, door.auto_close_timer - dt)
+                    if door.auto_close_timer <= 0.0:
+                        door.target_open = False
         else:
-            if player_in_door_tile(player, door_pos):
-                # Mirror classic behavior: a door won't close on top of the player.
+            if player_in_door_tile(player, door_pos) or player_near_door(player, door_pos):
+                # Mirror classic behavior: a door won't close on top of or near the player.
                 door.target_open = True
+                door.auto_close_timer = DOOR_AUTO_CLOSE_DELAY
                 continue
             door.open_amount = max(0.0, door.open_amount - delta)
 
@@ -228,7 +290,12 @@ def run(smoke_test: bool = False) -> None:
                     door_pos = find_door_in_front(player, doors)
                     if door_pos is not None:
                         door = doors[door_pos]
-                        door.target_open = not door.target_open
+                        if door.target_open:
+                            door.target_open = False
+                            door.auto_close_timer = 0.0
+                        else:
+                            door.target_open = True
+                            door.auto_close_timer = DOOR_AUTO_CLOSE_DELAY
 
         keys = pygame.key.get_pressed()
         forward = (float(keys[pygame.K_w]) - float(keys[pygame.K_s])) + (
@@ -250,14 +317,17 @@ def run(smoke_test: bool = False) -> None:
 
         for col in range(internal_w):
             ray_angle = player.angle - fov / 2.0 + (col / internal_w) * fov
-            depth, shade, hit_door = cast_ray(player.x, player.y, ray_angle, doors)
+            depth, shade, hit_kind = cast_ray(player.x, player.y, ray_angle, doors)
             corrected = depth * math.cos(ray_angle - player.angle)
             wall_h = min(int(internal_h / max(corrected, 0.0001)), internal_h)
 
             intensity = max(40, int(shade / (1.0 + corrected * 0.15)))
-            if hit_door:
-                # Door faces use a warm palette so they stand out from wall faces.
+            if hit_kind == 1:
+                # Door slab uses a warm palette so it stands out from wall faces.
                 color = (intensity, max(30, intensity // 2), 20)
+            elif hit_kind == 2:
+                # Door frame stays darker than slab for better depth cues.
+                color = (max(20, intensity // 2), max(15, intensity // 3), 10)
             else:
                 color = (intensity // 2, intensity // 2, intensity)
             top = (internal_h - wall_h) // 2

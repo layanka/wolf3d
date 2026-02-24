@@ -73,6 +73,13 @@ class ShotTrace:
     hit_enemy: bool = False
 
 
+@dataclass
+class RayHit:
+    depth: float
+    shade: int
+    hit_kind: int
+
+
 class AudioManager:
     def __init__(self) -> None:
         self.enabled = False
@@ -121,37 +128,13 @@ def is_blocked(x: float, y: float, doors: dict[tuple[int, int], Door]) -> bool:
     if tile == WALL_TILE:
         return True
     if tile == DOOR_TILE:
-        door = doors[(tx, ty)]
-        return door_blocks_point(tx, ty, x, y, door)
+        return door_blocks_point(tx, ty, x, y, doors[(tx, ty)])
     return False
 
 
-def door_blocks_point(tx: int, ty: int, x: float, y: float, door: Door) -> bool:
-    fx = x - tx
-    fy = y - ty
+def door_local_hit_kind(fx: float, fy: float, door: Door) -> int:
     slab_half = (DOOR_THICKNESS * 0.5) * (1.0 - door.open_amount)
-    if slab_half <= 0.003:
-        return False
 
-    if door.orientation == "vertical":
-        if abs(fy - 0.5) > DOOR_OPENING_HALF_WIDTH:
-            return True
-        if fy <= DOOR_FRAME_THICKNESS or fy >= 1.0 - DOOR_FRAME_THICKNESS:
-            return True
-        center = 0.5 + door.slide_sign * door.open_amount * DOOR_SLIDE_DISTANCE
-        return abs(fx - center) <= slab_half
-    if abs(fx - 0.5) > DOOR_OPENING_HALF_WIDTH:
-        return True
-    if fx <= DOOR_FRAME_THICKNESS or fx >= 1.0 - DOOR_FRAME_THICKNESS:
-        return True
-    center = 0.5 + door.slide_sign * door.open_amount * DOOR_SLIDE_DISTANCE
-    return abs(fy - center) <= slab_half
-
-
-def door_hit_kind(tx: int, ty: int, x: float, y: float, door: Door) -> int:
-    fx = x - tx
-    fy = y - ty
-    slab_half = (DOOR_THICKNESS * 0.5) * (1.0 - door.open_amount)
     if door.orientation == "vertical":
         if abs(fy - 0.5) > DOOR_OPENING_HALF_WIDTH:
             return 2
@@ -161,6 +144,7 @@ def door_hit_kind(tx: int, ty: int, x: float, y: float, door: Door) -> int:
         if slab_half > 0.003 and abs(fx - center) <= slab_half:
             return 1
         return 0
+
     if abs(fx - 0.5) > DOOR_OPENING_HALF_WIDTH:
         return 2
     if fx <= DOOR_FRAME_THICKNESS or fx >= 1.0 - DOOR_FRAME_THICKNESS:
@@ -169,6 +153,14 @@ def door_hit_kind(tx: int, ty: int, x: float, y: float, door: Door) -> int:
     if slab_half > 0.003 and abs(fy - center) <= slab_half:
         return 1
     return 0
+
+
+def door_hit_kind(tx: int, ty: int, x: float, y: float, door: Door) -> int:
+    return door_local_hit_kind(x - tx, y - ty, door)
+
+
+def door_blocks_point(tx: int, ty: int, x: float, y: float, door: Door) -> bool:
+    return door_hit_kind(tx, ty, x, y, door) != 0
 
 
 def normalize_angle(angle: float) -> float:
@@ -191,30 +183,83 @@ def move_with_collision(player: Player, forward: float, strafe: float, dt: float
         player.y = candidate_y
 
 
-def cast_ray(
-    px: float, py: float, ray_angle: float, doors: dict[tuple[int, int], Door], max_depth: float = 20.0
-) -> tuple[float, int, int]:
-    sin_a = math.sin(ray_angle)
-    cos_a = math.cos(ray_angle)
-    depth = 0.0
-    step = 0.02
-
-    while depth < max_depth:
+def trace_door_segment(
+    px: float,
+    py: float,
+    ray_dir_x: float,
+    ray_dir_y: float,
+    tx: int,
+    ty: int,
+    door: Door,
+    start_depth: float,
+    end_depth: float,
+) -> tuple[float, int, int] | None:
+    # Sample only inside the crossed tile segment for door geometry checks.
+    step = 0.01
+    depth = max(0.0, start_depth) + 0.001
+    end = max(depth, end_depth)
+    while depth <= end:
+        x = px + ray_dir_x * depth
+        y = py + ray_dir_y * depth
+        hit_kind = door_hit_kind(tx, ty, x, y, door)
+        if hit_kind == 2:
+            return depth, 155, 2
+        if hit_kind == 1:
+            return depth, 235, 1
         depth += step
-        test_x = px + cos_a * depth
-        test_y = py + sin_a * depth
-        tx, ty = int(test_x), int(test_y)
-        tile = tile_at(tx, ty)
+    return None
+
+
+def cast_ray(px: float, py: float, ray_angle: float, doors: dict[tuple[int, int], Door], max_depth: float = 20.0) -> RayHit:
+    ray_dir_x = math.cos(ray_angle)
+    ray_dir_y = math.sin(ray_angle)
+
+    map_x = int(px)
+    map_y = int(py)
+    delta_dist_x = abs(1.0 / ray_dir_x) if abs(ray_dir_x) > 1e-8 else float("inf")
+    delta_dist_y = abs(1.0 / ray_dir_y) if abs(ray_dir_y) > 1e-8 else float("inf")
+
+    if ray_dir_x < 0.0:
+        step_x = -1
+        side_dist_x = (px - map_x) * delta_dist_x
+    else:
+        step_x = 1
+        side_dist_x = (map_x + 1.0 - px) * delta_dist_x
+
+    if ray_dir_y < 0.0:
+        step_y = -1
+        side_dist_y = (py - map_y) * delta_dist_y
+    else:
+        step_y = 1
+        side_dist_y = (map_y + 1.0 - py) * delta_dist_y
+
+    while True:
+        if side_dist_x < side_dist_y:
+            depth = side_dist_x
+            side_dist_x += delta_dist_x
+            map_x += step_x
+            next_boundary = min(side_dist_x, side_dist_y)
+        else:
+            depth = side_dist_y
+            side_dist_y += delta_dist_y
+            map_y += step_y
+            next_boundary = min(side_dist_x, side_dist_y)
+
+        if depth >= max_depth:
+            return RayHit(max_depth, 120, 0)
+
+        tile = tile_at(map_x, map_y)
         if tile == WALL_TILE:
-            shade = 180 if int(test_x * 2) % 2 == 0 else 220
-            return depth, shade, 0
+            hit_x = px + ray_dir_x * depth
+            shade = 180 if int(hit_x * 2) % 2 == 0 else 220
+            return RayHit(depth, shade, 0)
         if tile == DOOR_TILE:
-            hit_kind = door_hit_kind(tx, ty, test_x, test_y, doors[(tx, ty)])
-            if hit_kind == 2:
-                return depth, 155, 2
-            if hit_kind == 1:
-                return depth, 235, 1
-    return max_depth, 120, 0
+            door_hit = trace_door_segment(
+                px, py, ray_dir_x, ray_dir_y, map_x, map_y, doors[(map_x, map_y)], depth, min(next_boundary, max_depth)
+            )
+            if door_hit is not None:
+                door_depth, door_shade, door_kind = door_hit
+                return RayHit(door_depth, door_shade, door_kind)
 
 
 def draw_minimap(surface: pygame.Surface, player: Player, doors: dict[tuple[int, int], Door], scale: int = 8) -> None:
@@ -316,31 +361,7 @@ def find_door_in_front(
     return None
 
 
-def try_shoot_enemy(player: Player, doors: dict[tuple[int, int], Door], enemy: Enemy) -> bool:
-    if not enemy.alive:
-        return False
-
-    dx = enemy.x - player.x
-    dy = enemy.y - player.y
-    distance = math.hypot(dx, dy)
-    if distance > ENEMY_SHOOT_RANGE:
-        return False
-
-    enemy_angle = math.atan2(dy, dx)
-    if abs(normalize_angle(enemy_angle - player.angle)) > ENEMY_HIT_ANGLE:
-        return False
-
-    wall_depth, _, _ = cast_ray(player.x, player.y, player.angle, doors)
-    if distance >= wall_depth - 0.05:
-        return False
-
-    enemy.health -= 1
-    if enemy.health <= 0:
-        enemy.alive = False
-    return True
-
-
-def compute_enemy_shot_distance(player: Player, doors: dict[tuple[int, int], Door], enemy: Enemy) -> float | None:
+def compute_enemy_shot_distance(player: Player, enemy: Enemy, wall_depth: float) -> float | None:
     if not enemy.alive:
         return None
 
@@ -354,7 +375,6 @@ def compute_enemy_shot_distance(player: Player, doors: dict[tuple[int, int], Doo
     if abs(normalize_angle(enemy_angle - player.angle)) > ENEMY_HIT_ANGLE:
         return None
 
-    wall_depth, _, _ = cast_ray(player.x, player.y, player.angle, doors)
     if distance >= wall_depth - 0.05:
         return None
     return distance
@@ -397,12 +417,16 @@ def attempt_fire(
 ) -> tuple[float, bool, bool, bool, float]:
     if cooldown_timer > 0.0:
         return cooldown_timer, False, False, False, 0.0
-    wall_depth, _, _ = cast_ray(player.x, player.y, player.angle, doors)
-    hit_distance = wall_depth
+    ray_hit = cast_ray(player.x, player.y, player.angle, doors)
+    hit_distance = ray_hit.depth
 
-    enemy_distance = compute_enemy_shot_distance(player, doors, enemy)
+    enemy_distance = compute_enemy_shot_distance(player, enemy, ray_hit.depth)
     alive_before = enemy.alive
-    hit_enemy = enemy_distance is not None and try_shoot_enemy(player, doors, enemy)
+    hit_enemy = enemy_distance is not None
+    if hit_enemy:
+        enemy.health -= 1
+        if enemy.health <= 0:
+            enemy.alive = False
     if enemy_distance is not None:
         hit_distance = min(hit_distance, enemy_distance)
     enemy_down = alive_before and not enemy.alive
@@ -457,6 +481,34 @@ def draw_shot_trace(surface: pygame.Surface, w: int, h: int, trace: ShotTrace) -
     pygame.draw.circle(surface, impact_color, end, impact_radius)
 
 
+def handle_fire_request(
+    fire_requested: bool,
+    shot_cooldown_timer: float,
+    player: Player,
+    doors: dict[tuple[int, int], Door],
+    enemy: Enemy,
+    audio: AudioManager,
+    hit_flash_timer: float,
+) -> tuple[float, float, float, ShotTrace]:
+    if not fire_requested:
+        return shot_cooldown_timer, 0.0, hit_flash_timer, ShotTrace()
+
+    shot_cooldown_timer, did_fire, did_hit, did_down, trace_distance = attempt_fire(shot_cooldown_timer, player, doors, enemy)
+    if not did_fire:
+        return shot_cooldown_timer, 0.0, hit_flash_timer, ShotTrace()
+
+    recoil_timer = WEAPON_RECOIL_DURATION
+    muzzle_flash_timer = MUZZLE_FLASH_DURATION
+    shot_trace = ShotTrace(timer=TRACER_DURATION, distance=trace_distance, hit_enemy=did_hit)
+    audio.play("shoot")
+    if did_hit:
+        hit_flash_timer = 0.12
+        audio.play("hit")
+    if did_down:
+        audio.play("down")
+    return shot_cooldown_timer, recoil_timer, hit_flash_timer, shot_trace
+
+
 def run(smoke_test: bool = False) -> None:
     if smoke_test:
         os.environ["SDL_VIDEODRIVER"] = "dummy"
@@ -481,6 +533,7 @@ def run(smoke_test: bool = False) -> None:
     recoil_timer = 0.0
     muzzle_flash_timer = 0.0
     shot_trace = ShotTrace()
+    depth_buffer = [20.0] * internal_w
 
     running = True
     frames = 0
@@ -488,6 +541,7 @@ def run(smoke_test: bool = False) -> None:
         dt = min(clock.tick(60) / 1000.0, 0.05)
         frames += 1
 
+        fire_requested = False
         for event in pygame.event.get():
             if event.type == pygame.QUIT:
                 running = False
@@ -508,33 +562,9 @@ def run(smoke_test: bool = False) -> None:
                             door.auto_close_timer = DOOR_AUTO_CLOSE_DELAY
                         audio.play("door")
                 if event.key == pygame.K_f:
-                    shot_cooldown_timer, did_fire, did_hit, did_down, trace_distance = attempt_fire(
-                        shot_cooldown_timer, player, doors, enemy
-                    )
-                    if did_fire:
-                        recoil_timer = WEAPON_RECOIL_DURATION
-                        muzzle_flash_timer = MUZZLE_FLASH_DURATION
-                        shot_trace = ShotTrace(timer=TRACER_DURATION, distance=trace_distance, hit_enemy=did_hit)
-                        audio.play("shoot")
-                    if did_hit:
-                        hit_flash_timer = 0.12
-                        audio.play("hit")
-                    if did_down:
-                        audio.play("down")
+                    fire_requested = True
             if event.type == pygame.MOUSEBUTTONDOWN and event.button == 1:
-                shot_cooldown_timer, did_fire, did_hit, did_down, trace_distance = attempt_fire(
-                    shot_cooldown_timer, player, doors, enemy
-                )
-                if did_fire:
-                    recoil_timer = WEAPON_RECOIL_DURATION
-                    muzzle_flash_timer = MUZZLE_FLASH_DURATION
-                    shot_trace = ShotTrace(timer=TRACER_DURATION, distance=trace_distance, hit_enemy=did_hit)
-                    audio.play("shoot")
-                if did_hit:
-                    hit_flash_timer = 0.12
-                    audio.play("hit")
-                if did_down:
-                    audio.play("down")
+                fire_requested = True
 
         keys = pygame.key.get_pressed()
         forward = (float(keys[pygame.K_w]) - float(keys[pygame.K_s])) + (
@@ -550,28 +580,37 @@ def run(smoke_test: bool = False) -> None:
         player.angle += turn * player.turn_speed * dt
         update_doors(doors, player, dt)
         move_with_collision(player, forward, strafe, dt, doors)
+
+        shot_cooldown_timer, new_recoil_timer, hit_flash_timer, new_shot_trace = handle_fire_request(
+            fire_requested, shot_cooldown_timer, player, doors, enemy, audio, hit_flash_timer
+        )
+        recoil_timer = max(recoil_timer, new_recoil_timer)
+        if new_recoil_timer > 0.0:
+            muzzle_flash_timer = MUZZLE_FLASH_DURATION
+            shot_trace = new_shot_trace
+
         hit_flash_timer = max(0.0, hit_flash_timer - dt)
         shot_cooldown_timer = max(0.0, shot_cooldown_timer - dt)
         recoil_timer = max(0.0, recoil_timer - dt)
         muzzle_flash_timer = max(0.0, muzzle_flash_timer - dt)
         shot_trace.timer = max(0.0, shot_trace.timer - dt)
+        door_in_front = find_door_in_front(player, doors)
 
         surface.fill((35, 35, 40))
         pygame.draw.rect(surface, (70, 78, 102), (0, internal_h // 2, internal_w, internal_h // 2))
-        depth_buffer = [20.0] * internal_w
 
         for col in range(internal_w):
             ray_angle = player.angle - fov / 2.0 + (col / internal_w) * fov
-            depth, shade, hit_kind = cast_ray(player.x, player.y, ray_angle, doors)
-            corrected = depth * math.cos(ray_angle - player.angle)
+            ray_hit = cast_ray(player.x, player.y, ray_angle, doors)
+            corrected = ray_hit.depth * math.cos(ray_angle - player.angle)
             depth_buffer[col] = corrected
             wall_h = min(int(internal_h / max(corrected, 0.0001)), internal_h)
 
-            intensity = max(40, int(shade / (1.0 + corrected * 0.15)))
-            if hit_kind == 1:
+            intensity = max(40, int(ray_hit.shade / (1.0 + corrected * 0.15)))
+            if ray_hit.hit_kind == 1:
                 # Door slab uses a warm palette so it stands out from wall faces.
                 color = (intensity, max(30, intensity // 2), 20)
-            elif hit_kind == 2:
+            elif ray_hit.hit_kind == 2:
                 # Door frame stays darker than slab for better depth cues.
                 color = (max(20, intensity // 2), max(15, intensity // 3), 10)
             else:
@@ -583,7 +622,7 @@ def run(smoke_test: bool = False) -> None:
         draw_shot_trace(surface, internal_w, internal_h, shot_trace)
 
         crosshair_color = (245, 245, 245) if hit_flash_timer <= 0.0 else (245, 120, 80)
-        if find_door_in_front(player, doors) is not None:
+        if door_in_front is not None:
             crosshair_color = (245, 190, 75)
 
         cx, cy = internal_w // 2, internal_h // 2

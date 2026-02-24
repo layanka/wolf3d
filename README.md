@@ -26,13 +26,17 @@ UV_CACHE_DIR=.uv-cache uv run python main.py
 - `W/S` or `Up/Down`: move forward/backward
 - `A/D`: strafe left/right
 - `Left/Right` or `Q/E`: rotate
+- `Space`: open/close door in front of you
 - `M`: toggle minimap
 - `Esc`: quit
 
 Expected visuals:
 - Blue-gray floor/ceiling bands
 - Vertical wall slices with depth shading
+- Door faces rendered in warm amber/orange to distinguish from regular walls
 - Top-left minimap with a green player dot and facing direction line
+- Door tiles shown in amber on the minimap (brighter when open)
+- Small center reticle appears when aiming at an interactable door
 
 ### Smoke test
 

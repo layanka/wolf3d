@@ -12,7 +12,7 @@ WORLD_MAP = [
     "111111111111",
     "100000000001",
     "101111011101",
-    "100001000001",
+    "100002000001",
     "101101111101",
     "100100000001",
     "101101011101",
@@ -21,6 +21,9 @@ WORLD_MAP = [
     "100000000001",
     "111111111111",
 ]
+WALL_TILE = "1"
+DOOR_TILE = "2"
+DOOR_SPEED = 1.8
 
 
 @dataclass
@@ -32,16 +35,46 @@ class Player:
     turn_speed: float = 2.2
 
 
-def is_wall(x: float, y: float) -> bool:
-    if x < 0 or y < 0:
-        return True
-    tx, ty = int(x), int(y)
+@dataclass
+class Door:
+    open_amount: float = 0.0
+    target_open: bool = False
+    orientation: str = "vertical"
+
+
+def tile_at(tx: int, ty: int) -> str:
+    if tx < 0 or ty < 0:
+        return WALL_TILE
     if ty >= len(WORLD_MAP) or tx >= len(WORLD_MAP[0]):
+        return WALL_TILE
+    return WORLD_MAP[ty][tx]
+
+
+def is_blocked(x: float, y: float, doors: dict[tuple[int, int], Door]) -> bool:
+    tx, ty = int(x), int(y)
+    tile = tile_at(tx, ty)
+    if tile == WALL_TILE:
         return True
-    return WORLD_MAP[ty][tx] == "1"
+    if tile == DOOR_TILE:
+        door = doors[(tx, ty)]
+        return door_blocks_point(tx, ty, x, y, door)
+    return False
 
 
-def move_with_collision(player: Player, forward: float, strafe: float, dt: float) -> None:
+def door_blocks_point(tx: int, ty: int, x: float, y: float, door: Door) -> bool:
+    openness = max(0.0, min(1.0, door.open_amount))
+    half_span = 0.48 * (1.0 - openness)
+    if half_span <= 0.01:
+        return False
+
+    fx = x - tx
+    fy = y - ty
+    if door.orientation == "vertical":
+        return abs(fx - 0.5) <= half_span
+    return abs(fy - 0.5) <= half_span
+
+
+def move_with_collision(player: Player, forward: float, strafe: float, dt: float, doors: dict[tuple[int, int], Door]) -> None:
     sin_a = math.sin(player.angle)
     cos_a = math.cos(player.angle)
     step = player.move_speed * dt
@@ -49,15 +82,17 @@ def move_with_collision(player: Player, forward: float, strafe: float, dt: float
     dy = (sin_a * forward + cos_a * strafe) * step
 
     candidate_x = player.x + dx
-    if not is_wall(candidate_x, player.y):
+    if not is_blocked(candidate_x, player.y, doors):
         player.x = candidate_x
 
     candidate_y = player.y + dy
-    if not is_wall(player.x, candidate_y):
+    if not is_blocked(player.x, candidate_y, doors):
         player.y = candidate_y
 
 
-def cast_ray(px: float, py: float, ray_angle: float, max_depth: float = 20.0) -> tuple[float, int]:
+def cast_ray(
+    px: float, py: float, ray_angle: float, doors: dict[tuple[int, int], Door], max_depth: float = 20.0
+) -> tuple[float, int, bool]:
     sin_a = math.sin(ray_angle)
     cos_a = math.cos(ray_angle)
     depth = 0.0
@@ -67,19 +102,31 @@ def cast_ray(px: float, py: float, ray_angle: float, max_depth: float = 20.0) ->
         depth += step
         test_x = px + cos_a * depth
         test_y = py + sin_a * depth
-        if is_wall(test_x, test_y):
+        tx, ty = int(test_x), int(test_y)
+        tile = tile_at(tx, ty)
+        if tile == WALL_TILE:
             shade = 180 if int(test_x * 2) % 2 == 0 else 220
-            return depth, shade
-    return max_depth, 120
+            return depth, shade, False
+        if tile == DOOR_TILE and door_blocks_point(tx, ty, test_x, test_y, doors[(tx, ty)]):
+            return depth, 235, True
+    return max_depth, 120, False
 
 
-def draw_minimap(surface: pygame.Surface, player: Player, scale: int = 8) -> None:
+def draw_minimap(surface: pygame.Surface, player: Player, doors: dict[tuple[int, int], Door], scale: int = 8) -> None:
     map_h = len(WORLD_MAP)
     map_w = len(WORLD_MAP[0])
     pad = 6
     for y in range(map_h):
         for x in range(map_w):
-            color = (55, 55, 60) if WORLD_MAP[y][x] == "1" else (135, 135, 145)
+            tile = WORLD_MAP[y][x]
+            if tile == WALL_TILE:
+                color = (55, 55, 60)
+            elif tile == DOOR_TILE:
+                openness = doors[(x, y)].open_amount
+                v = int(70 + openness * 150)
+                color = (v, 120, 55)
+            else:
+                color = (135, 135, 145)
             rect = (pad + x * scale, pad + y * scale, scale - 1, scale - 1)
             pygame.draw.rect(surface, color, rect)
 
@@ -89,6 +136,61 @@ def draw_minimap(surface: pygame.Surface, player: Player, scale: int = 8) -> Non
     lx = int(px + math.cos(player.angle) * 6)
     ly = int(py + math.sin(player.angle) * 6)
     pygame.draw.line(surface, (20, 30, 40), (px, py), (lx, ly), 2)
+
+
+def init_doors() -> dict[tuple[int, int], Door]:
+    doors: dict[tuple[int, int], Door] = {}
+    for y, row in enumerate(WORLD_MAP):
+        for x, tile in enumerate(row):
+            if tile == DOOR_TILE:
+                left_wall = tile_at(x - 1, y) == WALL_TILE
+                right_wall = tile_at(x + 1, y) == WALL_TILE
+                up_wall = tile_at(x, y - 1) == WALL_TILE
+                down_wall = tile_at(x, y + 1) == WALL_TILE
+
+                if up_wall and down_wall and not (left_wall and right_wall):
+                    orientation = "vertical"
+                elif left_wall and right_wall and not (up_wall and down_wall):
+                    orientation = "horizontal"
+                else:
+                    orientation = "vertical"
+                doors[(x, y)] = Door(orientation=orientation)
+    return doors
+
+
+def player_in_door_tile(player: Player, door_pos: tuple[int, int]) -> bool:
+    return int(player.x) == door_pos[0] and int(player.y) == door_pos[1]
+
+
+def update_doors(doors: dict[tuple[int, int], Door], player: Player, dt: float) -> None:
+    delta = DOOR_SPEED * dt
+    for door_pos, door in doors.items():
+        if door.target_open:
+            door.open_amount = min(1.0, door.open_amount + delta)
+        else:
+            if player_in_door_tile(player, door_pos):
+                # Mirror classic behavior: a door won't close on top of the player.
+                door.target_open = True
+                continue
+            door.open_amount = max(0.0, door.open_amount - delta)
+
+
+def find_door_in_front(
+    player: Player, doors: dict[tuple[int, int], Door], max_dist: float = 0.9
+) -> tuple[int, int] | None:
+    step = 0.05
+    sin_a = math.sin(player.angle)
+    cos_a = math.cos(player.angle)
+    depth = step
+    while depth <= max_dist:
+        tx = int(player.x + cos_a * depth)
+        ty = int(player.y + sin_a * depth)
+        if (tx, ty) in doors:
+            return tx, ty
+        if tile_at(tx, ty) == WALL_TILE:
+            return None
+        depth += step
+    return None
 
 
 def run(smoke_test: bool = False) -> None:
@@ -105,6 +207,7 @@ def run(smoke_test: bool = False) -> None:
 
     fov = math.radians(60)
     player = Player()
+    doors = init_doors()
     show_minimap = True
 
     running = True
@@ -121,6 +224,11 @@ def run(smoke_test: bool = False) -> None:
                     running = False
                 if event.key == pygame.K_m:
                     show_minimap = not show_minimap
+                if event.key == pygame.K_SPACE:
+                    door_pos = find_door_in_front(player, doors)
+                    if door_pos is not None:
+                        door = doors[door_pos]
+                        door.target_open = not door.target_open
 
         keys = pygame.key.get_pressed()
         forward = (float(keys[pygame.K_w]) - float(keys[pygame.K_s])) + (
@@ -134,24 +242,34 @@ def run(smoke_test: bool = False) -> None:
             turn += 1.0
 
         player.angle += turn * player.turn_speed * dt
-        move_with_collision(player, forward, strafe, dt)
+        update_doors(doors, player, dt)
+        move_with_collision(player, forward, strafe, dt, doors)
 
         surface.fill((35, 35, 40))
         pygame.draw.rect(surface, (70, 78, 102), (0, internal_h // 2, internal_w, internal_h // 2))
 
         for col in range(internal_w):
             ray_angle = player.angle - fov / 2.0 + (col / internal_w) * fov
-            depth, shade = cast_ray(player.x, player.y, ray_angle)
+            depth, shade, hit_door = cast_ray(player.x, player.y, ray_angle, doors)
             corrected = depth * math.cos(ray_angle - player.angle)
             wall_h = min(int(internal_h / max(corrected, 0.0001)), internal_h)
 
             intensity = max(40, int(shade / (1.0 + corrected * 0.15)))
-            color = (intensity // 2, intensity // 2, intensity)
+            if hit_door:
+                # Door faces use a warm palette so they stand out from wall faces.
+                color = (intensity, max(30, intensity // 2), 20)
+            else:
+                color = (intensity // 2, intensity // 2, intensity)
             top = (internal_h - wall_h) // 2
             pygame.draw.line(surface, color, (col, top), (col, top + wall_h))
 
+        if find_door_in_front(player, doors) is not None:
+            cx, cy = internal_w // 2, internal_h // 2
+            pygame.draw.line(surface, (245, 190, 75), (cx - 4, cy), (cx + 4, cy), 1)
+            pygame.draw.line(surface, (245, 190, 75), (cx, cy - 4), (cx, cy + 4), 1)
+
         if show_minimap:
-            draw_minimap(surface, player)
+            draw_minimap(surface, player, doors)
 
         scaled = pygame.transform.scale(surface, (screen_w, screen_h))
         screen.blit(scaled, (0, 0))

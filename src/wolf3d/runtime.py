@@ -33,6 +33,9 @@ SPRINT_SPEED_MULT = 1.55
 SPRINT_DRAIN_PER_SECOND = 40.0
 STAMINA_RECOVER_PER_SECOND = 26.0
 MIN_STAMINA_TO_SPRINT = 6.0
+SPRINT_RECOVER_UNLOCK = 22.0
+SPRINT_BLEND_IN_PER_SECOND = 7.0
+SPRINT_BLEND_OUT_PER_SECOND = 10.0
 
 
 @dataclass
@@ -86,6 +89,8 @@ class RunCheckpoint:
     level_title: str
     difficulty_id: str
     stamina: float
+    sprint_exhausted: bool
+    sprint_blend: float
 
 
 DIFFICULTY_PROFILES: dict[str, DifficultyProfile] = {
@@ -524,6 +529,8 @@ def build_checkpoint(
     level_title: str,
     difficulty_id: str,
     stamina: float,
+    sprint_exhausted: bool,
+    sprint_blend: float,
 ) -> RunCheckpoint:
     return RunCheckpoint(
         level_idx=level_idx,
@@ -551,6 +558,8 @@ def build_checkpoint(
         level_title=level_title,
         difficulty_id=difficulty_id,
         stamina=stamina,
+        sprint_exhausted=sprint_exhausted,
+        sprint_blend=sprint_blend,
     )
 
 
@@ -614,6 +623,8 @@ def run_runtime(smoke_test: bool = False, data_root: Path | None = None) -> None
     mouse_look = False
     mouse_sensitivity = 0.0028
     stamina = STAMINA_MAX
+    sprint_exhausted = False
+    sprint_blend = 0.0
 
     level_idx = 0
     objective_state = build_objective_state(campaign[level_idx].id)
@@ -663,7 +674,7 @@ def run_runtime(smoke_test: bool = False, data_root: Path | None = None) -> None
         nonlocal objective_state, active_projectiles, shot_cooldown, current_weapon_idx
         nonlocal unlocked_weapons, ammo_counts, magazine_counts, campaign_elapsed, level_elapsed
         nonlocal shots_fired, shots_hit, kills_total, level_kills, level_title
-        nonlocal difficulty, stamina, show_briefing, player_dead, campaign_complete
+        nonlocal difficulty, stamina, sprint_exhausted, sprint_blend, show_briefing, player_dead, campaign_complete
         nonlocal dry_fire_timer, heal_flash_timer, paused, reload_timer, reload_weapon_id
         nonlocal checkpoint_notice_timer, checkpoint_notice_text
 
@@ -695,6 +706,8 @@ def run_runtime(smoke_test: bool = False, data_root: Path | None = None) -> None
         level_title = checkpoint.level_title
         difficulty = DIFFICULTY_PROFILES.get(checkpoint.difficulty_id, DIFFICULTY_PROFILES["normal"])
         stamina = checkpoint.stamina
+        sprint_exhausted = checkpoint.sprint_exhausted
+        sprint_blend = checkpoint.sprint_blend
 
         show_briefing = False
         player_dead = False
@@ -777,6 +790,8 @@ def run_runtime(smoke_test: bool = False, data_root: Path | None = None) -> None
                         level_elapsed = 0.0
                         level_kills = 0
                         stamina = STAMINA_MAX
+                        sprint_exhausted = False
+                        sprint_blend = 0.0
                         reload_timer = 0.0
                         reload_weapon_id = None
                     player_dead = False
@@ -809,6 +824,8 @@ def run_runtime(smoke_test: bool = False, data_root: Path | None = None) -> None
                     dry_fire_timer = 0.0
                     heal_flash_timer = 0.0
                     stamina = STAMINA_MAX
+                    sprint_exhausted = False
+                    sprint_blend = 0.0
                     checkpoint = None
                     checkpoint_notice_timer = 0.0
                 elif event.key == pygame.K_F1:
@@ -841,12 +858,20 @@ def run_runtime(smoke_test: bool = False, data_root: Path | None = None) -> None
 
         simulation_active = not paused and not show_briefing and not player_dead and not campaign_complete
         moving = abs(forward) > 0.01 or abs(strafe) > 0.01
-        can_sprint = simulation_active and moving and wants_sprint and stamina > MIN_STAMINA_TO_SPRINT
-        is_sprinting = can_sprint
+        if sprint_exhausted and stamina >= SPRINT_RECOVER_UNLOCK:
+            sprint_exhausted = False
+        sprint_requested = simulation_active and moving and wants_sprint
+        can_sprint = sprint_requested and (not sprint_exhausted) and stamina > MIN_STAMINA_TO_SPRINT
+        sprint_target = 1.0 if can_sprint else 0.0
+        if sprint_target > sprint_blend:
+            sprint_blend = min(1.0, sprint_blend + SPRINT_BLEND_IN_PER_SECOND * dt)
+        elif sprint_target < sprint_blend:
+            sprint_blend = max(0.0, sprint_blend - SPRINT_BLEND_OUT_PER_SECOND * dt)
+        is_sprinting = sprint_blend > 0.1
 
         base_speed = player.move_speed
-        if is_sprinting:
-            player.move_speed = base_speed * SPRINT_SPEED_MULT
+        speed_mult = 1.0 + (SPRINT_SPEED_MULT - 1.0) * sprint_blend
+        player.move_speed = base_speed * speed_mult
 
         player.angle += 0.0 if (player_dead or campaign_complete or paused) else turn * player.turn_speed * dt
         if simulation_active:
@@ -858,10 +883,12 @@ def run_runtime(smoke_test: bool = False, data_root: Path | None = None) -> None
         player.move_speed = base_speed
 
         if simulation_active:
-            if is_sprinting:
-                stamina = max(0.0, stamina - SPRINT_DRAIN_PER_SECOND * dt)
+            if moving and sprint_blend > 0.05:
+                stamina = max(0.0, stamina - SPRINT_DRAIN_PER_SECOND * sprint_blend * dt)
             else:
                 stamina = min(STAMINA_MAX, stamina + STAMINA_RECOVER_PER_SECOND * dt)
+        if stamina <= 0.01:
+            sprint_exhausted = True
         melee_damage = 0
         spawned_projectiles: list[ProjectileState] = []
         if simulation_active:
@@ -955,6 +982,8 @@ def run_runtime(smoke_test: bool = False, data_root: Path | None = None) -> None
                 level_title=level_title,
                 difficulty_id=difficulty.id,
                 stamina=stamina,
+                sprint_exhausted=sprint_exhausted,
+                sprint_blend=sprint_blend,
             )
             checkpoint_notice_text = "Checkpoint saved"
             checkpoint_notice_timer = 1.0
@@ -1054,6 +1083,8 @@ def run_runtime(smoke_test: bool = False, data_root: Path | None = None) -> None
                         refill_weapon_magazine(weapon_id, weapons_by_id, ammo_counts, magazine_counts)
                 level_elapsed = 0.0
                 level_kills = 0
+                sprint_exhausted = False
+                sprint_blend = 0.0
                 reload_timer = 0.0
                 reload_weapon_id = None
                 checkpoint = None
@@ -1121,7 +1152,9 @@ def run_runtime(smoke_test: bool = False, data_root: Path | None = None) -> None
             accuracy = int((shots_hit / shots_fired) * 100)
             hud_lines.append(f"Accuracy: {accuracy}%")
         hud_lines.append(f"Stamina: {int(stamina)}%")
-        if simulation_active and is_sprinting:
+        if sprint_exhausted:
+            hud_lines.append("Exhausted: recover stamina")
+        elif simulation_active and is_sprinting:
             hud_lines.append("Sprinting")
         active_mag = magazine_counts.get(active_weapon.id, 0)
         active_reserve = ammo_counts.get(ammo_type, 0)

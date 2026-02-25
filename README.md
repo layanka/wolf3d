@@ -68,6 +68,7 @@ Expected visuals:
 - Weapon pickups are shown as yellow dots on the minimap and unlock additional weapon keys
 - Ranged enemies now fire visible projectiles that are blocked by walls/doors
 - Player muzzle flash is now weapon-specific (pistol/smg/shotgun/autorifle)
+- Incoming enemy rounds are shown as orange dots on the minimap
 
 Audio source and license notes:
 - [assets/audio/CREDITS.md](/Users/philippe.lefebvre2/Code/testing1/assets/audio/CREDITS.md)

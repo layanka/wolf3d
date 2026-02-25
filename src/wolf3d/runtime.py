@@ -246,7 +246,9 @@ def run_runtime(smoke_test: bool = False, data_root: Path | None = None) -> None
             active_projectiles.extend(spawned_projectiles)
 
         active_projectiles, projectile_damage = update_projectiles(world, player, active_projectiles, dt)
-        player.health = max(0, player.health - melee_damage - projectile_damage)
+        enemy_damage_scale = 1.0 + level_idx * 0.2
+        scaled_damage = int(math.ceil((melee_damage + projectile_damage) * enemy_damage_scale))
+        player.health = max(0, player.health - scaled_damage)
         player_dead = player.health <= 0
 
         for pickup in pickups[:]:
@@ -327,6 +329,8 @@ def run_runtime(smoke_test: bool = False, data_root: Path | None = None) -> None
             hud_lines.append("You were eliminated: press R to retry level")
         if active_projectiles:
             hud_lines.append(f"Incoming: {len(active_projectiles)}")
+        if level_idx > 0:
+            hud_lines.append(f"Threat scale: x{1.0 + level_idx * 0.2:.1f}")
         for i, line in enumerate(hud_lines):
             color = (245, 210, 120) if "Level clear" in line else (220, 220, 225)
             hud_surface = font.render(line, True, color)
@@ -359,6 +363,11 @@ def run_runtime(smoke_test: bool = False, data_root: Path | None = None) -> None
                 wx = int(pad + float(pickup["x"]) * scale)
                 wy = int(pad + float(pickup["y"]) * scale)
                 pygame.draw.circle(surface, (210, 180, 50), (wx, wy), 2)
+            for projectile in active_projectiles:
+                sx = int(pad + projectile.x * scale)
+                sy = int(pad + projectile.y * scale)
+                if 0 <= sx < internal_w and 0 <= sy < internal_h:
+                    pygame.draw.circle(surface, (250, 120, 70), (sx, sy), 1)
 
         if show_briefing:
             overlay = pygame.Surface((internal_w, internal_h), pygame.SRCALPHA)

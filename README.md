@@ -42,6 +42,7 @@ Runtime shell data sources:
 - `1/2/3/4`: switch weapon archetype (`pistol` / `smg` / `shotgun` / `autorifle`)
 - `M`: toggle minimap
 - `Enter`: dismiss level briefing / advance to next level after level clear (runtime shell)
+- `R`: retry current level after death (runtime shell)
 - `Esc`: quit
 
 Door behavior:

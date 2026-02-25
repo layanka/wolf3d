@@ -90,6 +90,7 @@ def run_runtime(smoke_test: bool = False, data_root: Path | None = None) -> None
     current_weapon_idx = 0
     unlocked_weapons = {weapon_cycle[0]}
     show_briefing = True
+    player_dead = False
 
     level_idx = 0
 
@@ -136,7 +137,8 @@ def run_runtime(smoke_test: bool = False, data_root: Path | None = None) -> None
                 elif event.key == pygame.K_m:
                     show_minimap = not show_minimap
                 elif event.key == pygame.K_SPACE:
-                    world.toggle_door_in_front(player)
+                    if not show_briefing and not player_dead:
+                        world.toggle_door_in_front(player)
                 elif event.key == pygame.K_f:
                     fire_requested = True
                 elif event.key == pygame.K_RETURN:
@@ -152,6 +154,12 @@ def run_runtime(smoke_test: bool = False, data_root: Path | None = None) -> None
                     current_weapon_idx = 2
                 elif event.key == pygame.K_4 and len(weapon_cycle) >= 4 and weapon_cycle[3] in unlocked_weapons:
                     current_weapon_idx = 3
+                elif event.key == pygame.K_r and player_dead:
+                    world, player, enemies, pickups, level_title = load_level_state(level_idx)
+                    shot_cooldown = 0.0
+                    current_weapon_idx = 0
+                    show_briefing = True
+                    player_dead = False
             elif event.type == pygame.MOUSEBUTTONDOWN and event.button == 1:
                 fire_requested = True
 
@@ -166,11 +174,13 @@ def run_runtime(smoke_test: bool = False, data_root: Path | None = None) -> None
         if keys[pygame.K_e]:
             turn += 1.0
 
-        player.angle += turn * player.turn_speed * dt
+        player.angle += 0.0 if player_dead else turn * player.turn_speed * dt
         world.update_doors(player, dt)
-        world.move_player(player, forward, strafe, dt)
-        enemy_damage = 0 if show_briefing else update_enemies(player, enemies, enemy_types, world, dt)
+        if not player_dead:
+            world.move_player(player, forward, strafe, dt)
+        enemy_damage = 0 if show_briefing or player_dead else update_enemies(player, enemies, enemy_types, world, dt)
         player.health = max(0, player.health - enemy_damage)
+        player_dead = player.health <= 0
 
         for pickup in pickups[:]:
             dx = float(pickup["x"]) - player.x
@@ -183,7 +193,7 @@ def run_runtime(smoke_test: bool = False, data_root: Path | None = None) -> None
             current_weapon_idx -= 1
 
         active_weapon = weapons_by_id[weapon_cycle[current_weapon_idx]]
-        if fire_requested and not show_briefing:
+        if fire_requested and not show_briefing and not player_dead:
             fire, _target = attempt_fire_multi(
                 shot_cooldown,
                 player,
@@ -198,7 +208,7 @@ def run_runtime(smoke_test: bool = False, data_root: Path | None = None) -> None
         shot_cooldown = max(0.0, shot_cooldown - dt)
 
         level_cleared = all(not e.alive for e in enemies)
-        if level_cleared and next_level_requested and level_idx < len(campaign) - 1:
+        if level_cleared and not player_dead and next_level_requested and level_idx < len(campaign) - 1:
             level_idx += 1
             world, player, enemies, pickups, level_title = load_level_state(level_idx)
             shot_cooldown = 0.0
@@ -234,6 +244,8 @@ def run_runtime(smoke_test: bool = False, data_root: Path | None = None) -> None
             hud_lines.append("Level clear! Press ENTER for next level")
         if show_briefing:
             hud_lines.append("Mission briefing active: ENTER to deploy")
+        if player_dead:
+            hud_lines.append("You were eliminated: press R to retry level")
         for i, line in enumerate(hud_lines):
             color = (245, 210, 120) if "Level clear" in line else (220, 220, 225)
             hud_surface = font.render(line, True, color)
@@ -276,6 +288,14 @@ def run_runtime(smoke_test: bool = False, data_root: Path | None = None) -> None
             surface.blit(title_surface, (16, 70))
             surface.blit(briefing_surface, (16, 86))
             surface.blit(deploy_surface, (16, 102))
+        elif player_dead:
+            overlay = pygame.Surface((internal_w, internal_h), pygame.SRCALPHA)
+            overlay.fill((18, 2, 2, 170))
+            surface.blit(overlay, (0, 0))
+            dead_surface = font.render("MISSION FAILED", True, (235, 125, 125))
+            retry_surface = font.render("Press R to retry this level", True, (235, 210, 160))
+            surface.blit(dead_surface, (16, 86))
+            surface.blit(retry_surface, (16, 102))
 
         screen.blit(pygame.transform.scale(surface, (screen_w, screen_h)), (0, 0))
         pygame.display.flip()

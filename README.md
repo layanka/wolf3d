@@ -88,6 +88,7 @@ Expected visuals:
 - Runtime auto-switches to another unlocked weapon when current ammo is empty
 - Difficulty now scales incoming damage and ammo gains (drops/pickups/resupply)
 - Manual checkpoints can be restored on death from the same level
+- HUD now provides objective direction and distance guidance
 
 Audio source and license notes:
 - [assets/audio/CREDITS.md](/Users/philippe.lefebvre2/Code/testing1/assets/audio/CREDITS.md)

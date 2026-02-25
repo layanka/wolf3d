@@ -165,6 +165,48 @@ def objective_interact_hint(node: ObjectiveNode, state: ObjectiveState, enemies:
     return "Press X to activate beacon"
 
 
+def current_objective_target(state: ObjectiveState, enemies: list[EnemyState]) -> tuple[float, float] | None:
+    if state.mode == "key_extract":
+        if state.keycard_collected:
+            node = state.nodes[0]
+            if not node.activated:
+                return node.x, node.y
+        return None
+    if state.mode == "consoles":
+        for node in state.nodes:
+            if not node.activated:
+                return node.x, node.y
+        return None
+
+    commander = next((enemy for enemy in enemies if enemy.alive and enemy.type_id == "commander"), None)
+    if commander is not None:
+        return commander.x, commander.y
+    node = state.nodes[0]
+    if not node.activated:
+        return node.x, node.y
+    return None
+
+
+def objective_nav_hint(player: PlayerState, target: tuple[float, float] | None) -> str | None:
+    if target is None:
+        return None
+    dx = target[0] - player.x
+    dy = target[1] - player.y
+    distance = math.hypot(dx, dy)
+    if distance <= 0.01:
+        return "Objective nav: here"
+
+    target_angle = math.atan2(dy, dx)
+    delta = normalize_angle(target_angle - player.angle)
+    if abs(delta) < 0.2:
+        turn_hint = "ahead"
+    elif delta > 0.0:
+        turn_hint = "turn right"
+    else:
+        turn_hint = "turn left"
+    return f"Objective nav: {turn_hint} ({distance:.1f}m)"
+
+
 def process_objective_interaction(player: PlayerState, state: ObjectiveState, enemies: list[EnemyState]) -> None:
     node = nearest_objective_node(player, state)
     if node is None:
@@ -946,6 +988,9 @@ def run_runtime(smoke_test: bool = False, data_root: Path | None = None) -> None
             hud_lines.append("Medkit used")
         if checkpoint_notice_timer > 0.0:
             hud_lines.append("Checkpoint saved")
+        nav_hint = objective_nav_hint(player, current_objective_target(objective_state, enemies))
+        if nav_hint is not None:
+            hud_lines.append(nav_hint)
         hud_lines.append(f"Time L/C: {format_duration(level_elapsed)} / {format_duration(campaign_elapsed)}")
         hud_lines.append(f"Kills L/C: {level_kills} / {kills_total}")
         objective_hint_node = nearest_objective_node(player, objective_state)

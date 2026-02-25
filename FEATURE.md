@@ -91,7 +91,7 @@ Living feature backlog for the full game (post-PoC), with sprint IDs, status, or
   - Accept: CI-style deterministic checks for settings/save/load/contracts.
 - `FS-026` `done`: Performance pass (hotspot profiling, selective optimization).
   - Accept: steady 60 FPS target on typical maps; bottlenecks documented.
-- `FS-027` `next`: Documentation/release pack (controls matrix, feature list, known limits).
+- `FS-027` `done`: Documentation/release pack (controls matrix, feature list, known limits).
   - Accept: repo is handoff-ready for new sessions/contributors.
 
 ## Execution Order

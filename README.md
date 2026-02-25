@@ -141,6 +141,9 @@ Expected visuals:
 Audio source and license notes:
 - [assets/audio/CREDITS.md](/Users/philippe.lefebvre2/Code/testing1/assets/audio/CREDITS.md)
 
+Release handoff notes:
+- [docs/RELEASE_PACK.md](/Users/philippe.lefebvre2/Code/testing1/docs/RELEASE_PACK.md)
+
 ### Smoke test
 
 ```bash

@@ -88,10 +88,12 @@ def run_runtime(smoke_test: bool = False, data_root: Path | None = None) -> None
     show_minimap = True
     shot_cooldown = 0.0
     current_weapon_idx = 0
+    unlocked_weapons = {weapon_cycle[0]}
+    show_briefing = True
 
     level_idx = 0
 
-    def load_level_state(index: int) -> tuple[WorldSimulation, PlayerState, list[EnemyState], str]:
+    def load_level_state(index: int) -> tuple[WorldSimulation, PlayerState, list[EnemyState], list[dict[str, float | str]], str]:
         campaign_level = campaign[index]
         spec = level_specs[campaign_level.id]
         tile_map = load_level_map(data_root, spec)
@@ -110,9 +112,12 @@ def run_runtime(smoke_test: bool = False, data_root: Path | None = None) -> None
                     alive=True,
                 )
             )
-        return world, player, enemies, campaign_level.title
+        pickups: list[dict[str, float | str]] = []
+        for pickup in spec.weapon_pickups:
+            pickups.append({"type": str(pickup["type"]), "x": float(pickup["x"]), "y": float(pickup["y"])})
+        return world, player, enemies, pickups, campaign_level.title
 
-    world, player, enemies, level_title = load_level_state(level_idx)
+    world, player, enemies, pickups, level_title = load_level_state(level_idx)
 
     running = True
     frames = 0
@@ -135,14 +140,17 @@ def run_runtime(smoke_test: bool = False, data_root: Path | None = None) -> None
                 elif event.key == pygame.K_f:
                     fire_requested = True
                 elif event.key == pygame.K_RETURN:
-                    next_level_requested = True
+                    if show_briefing:
+                        show_briefing = False
+                    else:
+                        next_level_requested = True
                 elif event.key == pygame.K_1:
                     current_weapon_idx = 0
-                elif event.key == pygame.K_2 and len(weapon_cycle) >= 2:
+                elif event.key == pygame.K_2 and len(weapon_cycle) >= 2 and weapon_cycle[1] in unlocked_weapons:
                     current_weapon_idx = 1
-                elif event.key == pygame.K_3 and len(weapon_cycle) >= 3:
+                elif event.key == pygame.K_3 and len(weapon_cycle) >= 3 and weapon_cycle[2] in unlocked_weapons:
                     current_weapon_idx = 2
-                elif event.key == pygame.K_4 and len(weapon_cycle) >= 4:
+                elif event.key == pygame.K_4 and len(weapon_cycle) >= 4 and weapon_cycle[3] in unlocked_weapons:
                     current_weapon_idx = 3
             elif event.type == pygame.MOUSEBUTTONDOWN and event.button == 1:
                 fire_requested = True
@@ -161,11 +169,21 @@ def run_runtime(smoke_test: bool = False, data_root: Path | None = None) -> None
         player.angle += turn * player.turn_speed * dt
         world.update_doors(player, dt)
         world.move_player(player, forward, strafe, dt)
-        enemy_damage = update_enemies(player, enemies, enemy_types, world, dt)
+        enemy_damage = 0 if show_briefing else update_enemies(player, enemies, enemy_types, world, dt)
         player.health = max(0, player.health - enemy_damage)
 
+        for pickup in pickups[:]:
+            dx = float(pickup["x"]) - player.x
+            dy = float(pickup["y"]) - player.y
+            if dx * dx + dy * dy <= 0.35 * 0.35:
+                unlocked_weapons.add(str(pickup["type"]))
+                pickups.remove(pickup)
+
+        while weapon_cycle[current_weapon_idx] not in unlocked_weapons and current_weapon_idx > 0:
+            current_weapon_idx -= 1
+
         active_weapon = weapons_by_id[weapon_cycle[current_weapon_idx]]
-        if fire_requested:
+        if fire_requested and not show_briefing:
             fire, _target = attempt_fire_multi(
                 shot_cooldown,
                 player,
@@ -182,9 +200,10 @@ def run_runtime(smoke_test: bool = False, data_root: Path | None = None) -> None
         level_cleared = all(not e.alive for e in enemies)
         if level_cleared and next_level_requested and level_idx < len(campaign) - 1:
             level_idx += 1
-            world, player, enemies, level_title = load_level_state(level_idx)
+            world, player, enemies, pickups, level_title = load_level_state(level_idx)
             shot_cooldown = 0.0
             current_weapon_idx = 0
+            show_briefing = True
 
         surface.fill((35, 35, 40))
         pygame.draw.rect(surface, (70, 78, 102), (0, internal_h // 2, internal_w, internal_h // 2))
@@ -213,6 +232,8 @@ def run_runtime(smoke_test: bool = False, data_root: Path | None = None) -> None
         hud_lines = [f"Level {level_idx + 1}/{len(campaign)}: {level_title}"] + format_hud_lines(snapshot)
         if level_cleared:
             hud_lines.append("Level clear! Press ENTER for next level")
+        if show_briefing:
+            hud_lines.append("Mission briefing active: ENTER to deploy")
         for i, line in enumerate(hud_lines):
             color = (245, 210, 120) if "Level clear" in line else (220, 220, 225)
             hud_surface = font.render(line, True, color)
@@ -240,6 +261,21 @@ def run_runtime(smoke_test: bool = False, data_root: Path | None = None) -> None
             px = int(pad + player.x * scale)
             py = int(pad + player.y * scale)
             pygame.draw.circle(surface, (30, 210, 80), (px, py), 2)
+            for pickup in pickups:
+                wx = int(pad + float(pickup["x"]) * scale)
+                wy = int(pad + float(pickup["y"]) * scale)
+                pygame.draw.circle(surface, (210, 180, 50), (wx, wy), 2)
+
+        if show_briefing:
+            overlay = pygame.Surface((internal_w, internal_h), pygame.SRCALPHA)
+            overlay.fill((8, 8, 12, 190))
+            surface.blit(overlay, (0, 0))
+            title_surface = font.render(level_title, True, (245, 210, 120))
+            briefing_surface = font.render(campaign[level_idx].briefing, True, (232, 232, 236))
+            deploy_surface = font.render("Press ENTER to deploy", True, (245, 210, 120))
+            surface.blit(title_surface, (16, 70))
+            surface.blit(briefing_surface, (16, 86))
+            surface.blit(deploy_surface, (16, 102))
 
         screen.blit(pygame.transform.scale(surface, (screen_w, screen_h)), (0, 0))
         pygame.display.flip()

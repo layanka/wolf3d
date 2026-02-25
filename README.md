@@ -41,7 +41,7 @@ Runtime shell data sources:
 - `F` or left mouse click: shoot
 - `1/2/3/4`: switch weapon archetype (`pistol` / `smg` / `shotgun` / `autorifle`)
 - `M`: toggle minimap
-- `Enter`: advance to next level after level clear (runtime shell)
+- `Enter`: dismiss level briefing / advance to next level after level clear (runtime shell)
 - `Esc`: quit
 
 Door behavior:
@@ -64,6 +64,7 @@ Expected visuals:
 - Bottom-center weapon overlay with recoil and muzzle flash on fire
 - File-based SFX (`OGG`) for shooting, hits, enemy down, door, and footsteps
 - Footsteps are intentionally low-volume/subtle while moving
+- Weapon pickups are shown as yellow dots on the minimap and unlock additional weapon keys
 
 Audio source and license notes:
 - [assets/audio/CREDITS.md](/Users/philippe.lefebvre2/Code/testing1/assets/audio/CREDITS.md)

@@ -65,9 +65,9 @@ Living feature backlog for the full game (post-PoC), with sprint IDs, status, or
   - Accept: player can infer incoming threat direction and impact type.
 
 ### Planned: Weapons and Items
-- `FS-017` `next`: Weapon personality pass (per-weapon recoil curves, reload interrupt policy, swap timings).
+- `FS-017` `done`: Weapon personality pass (per-weapon recoil curves, reload interrupt policy, swap timings).
   - Accept: each weapon has unique handling profile without balance breaks.
-- `FS-018` `planned`: Secondary fire prototype for one weapon.
+- `FS-018` `next`: Secondary fire prototype for one weapon.
   - Accept: alternate mode implemented, documented, and balanced enough for playtest.
 - `FS-019` `planned`: Pickup economy pass (ammo/medkit drop tuning by difficulty + level).
   - Accept: resource flow avoids starvation and trivial abundance.

@@ -107,6 +107,8 @@ class RunCheckpoint:
     active_projectiles: list[ProjectileState]
     shot_cooldown: float
     current_weapon_idx: int
+    pending_weapon_idx: int | None
+    weapon_swap_timer: float
     unlocked_weapons: set[str]
     ammo_counts: dict[str, int]
     magazine_counts: dict[str, int]
@@ -569,6 +571,8 @@ def build_checkpoint(
     active_projectiles: list[ProjectileState],
     shot_cooldown: float,
     current_weapon_idx: int,
+    pending_weapon_idx: int | None,
+    weapon_swap_timer: float,
     unlocked_weapons: set[str],
     ammo_counts: dict[str, int],
     magazine_counts: dict[str, int],
@@ -598,6 +602,8 @@ def build_checkpoint(
         active_projectiles=deepcopy(active_projectiles),
         shot_cooldown=shot_cooldown,
         current_weapon_idx=current_weapon_idx,
+        pending_weapon_idx=pending_weapon_idx,
+        weapon_swap_timer=weapon_swap_timer,
         unlocked_weapons=set(unlocked_weapons),
         ammo_counts=dict(ammo_counts),
         magazine_counts=dict(magazine_counts),
@@ -700,7 +706,7 @@ def load_checkpoint_from_disk(project_root: Path) -> RunCheckpoint | None:
     try:
         with path.open("rb") as f:
             loaded = pickle.load(f)
-    except (OSError, pickle.PickleError, AttributeError, EOFError):
+    except (OSError, pickle.PickleError, AttributeError, EOFError, TypeError):
         return None
     if isinstance(loaded, RunCheckpoint):
         return loaded
@@ -760,6 +766,8 @@ def run_runtime(smoke_test: bool = False, data_root: Path | None = None, quicklo
     active_projectiles: list[ProjectileState] = []
     weapon_fx_timer = 0.0
     weapon_fx_id = weapon_cycle[0]
+    weapon_swap_timer = 0.0
+    pending_weapon_idx: int | None = None
     damage_flash_timer = 0.0
     melee_hit_flash_timer = 0.0
     projectile_hit_flash_timer = 0.0
@@ -807,6 +815,52 @@ def run_runtime(smoke_test: bool = False, data_root: Path | None = None, quicklo
 
     level_idx = 0
     objective_state = build_objective_state(campaign[level_idx].id)
+
+    default_weapon_handling = {
+        "recoil_gain": 0.008,
+        "recoil_decay": 0.95,
+        "move_spread_mult": 1.0,
+        "sprint_spread_mult": 1.0,
+        "swap_time": 0.08,
+        "reload_interruptible": True,
+    }
+    weapon_handling: dict[str, dict[str, float | bool]] = {
+        "pistol": {
+            "recoil_gain": 0.011,
+            "recoil_decay": 1.18,
+            "move_spread_mult": 0.75,
+            "sprint_spread_mult": 0.9,
+            "swap_time": 0.06,
+            "reload_interruptible": True,
+        },
+        "smg": {
+            "recoil_gain": 0.0085,
+            "recoil_decay": 0.8,
+            "move_spread_mult": 1.2,
+            "sprint_spread_mult": 1.35,
+            "swap_time": 0.07,
+            "reload_interruptible": True,
+        },
+        "shotgun": {
+            "recoil_gain": 0.0,
+            "recoil_decay": 1.0,
+            "move_spread_mult": 0.9,
+            "sprint_spread_mult": 1.05,
+            "swap_time": 0.12,
+            "reload_interruptible": False,
+        },
+        "autorifle": {
+            "recoil_gain": 0.006,
+            "recoil_decay": 0.9,
+            "move_spread_mult": 1.1,
+            "sprint_spread_mult": 1.2,
+            "swap_time": 0.09,
+            "reload_interruptible": True,
+        },
+    }
+
+    def handling_for(weapon_id: str) -> dict[str, float | bool]:
+        return weapon_handling.get(weapon_id, default_weapon_handling)
 
     settings_last_write_at = 0.0
     settings_pending = False
@@ -887,6 +941,7 @@ def run_runtime(smoke_test: bool = False, data_root: Path | None = None, quicklo
         nonlocal level_idx
         nonlocal world, player, enemies, pickups, ammo_pickups, health_pickups
         nonlocal objective_state, active_projectiles, shot_cooldown, current_weapon_idx
+        nonlocal pending_weapon_idx, weapon_swap_timer
         nonlocal unlocked_weapons, ammo_counts, magazine_counts, campaign_elapsed, level_elapsed
         nonlocal shots_fired, shots_hit, kills_total, level_kills, level_title
         nonlocal difficulty, stamina, sprint_exhausted, sprint_blend, show_briefing, player_dead, campaign_complete
@@ -909,6 +964,8 @@ def run_runtime(smoke_test: bool = False, data_root: Path | None = None, quicklo
         active_projectiles = deepcopy(checkpoint.active_projectiles)
         shot_cooldown = checkpoint.shot_cooldown
         current_weapon_idx = checkpoint.current_weapon_idx
+        pending_weapon_idx = getattr(checkpoint, "pending_weapon_idx", None)
+        weapon_swap_timer = float(getattr(checkpoint, "weapon_swap_timer", 0.0))
         unlocked_weapons = set(checkpoint.unlocked_weapons)
         ammo_counts = dict(checkpoint.ammo_counts)
         magazine_counts = dict(checkpoint.magazine_counts)
@@ -1082,6 +1139,8 @@ def run_runtime(smoke_test: bool = False, data_root: Path | None = None, quicklo
                         world, player, enemies, pickups, ammo_pickups, health_pickups, level_title, level_win_condition = load_level_state(level_idx)
                         shot_cooldown = 0.0
                         current_weapon_idx = 0
+                        pending_weapon_idx = None
+                        weapon_swap_timer = 0.0
                         show_briefing = True
                         objective_state = build_objective_state(campaign[level_idx].id)
                         level_elapsed = 0.0
@@ -1115,6 +1174,8 @@ def run_runtime(smoke_test: bool = False, data_root: Path | None = None, quicklo
                     world, player, enemies, pickups, ammo_pickups, health_pickups, level_title, level_win_condition = load_level_state(level_idx)
                     shot_cooldown = 0.0
                     current_weapon_idx = 0
+                    pending_weapon_idx = None
+                    weapon_swap_timer = 0.0
                     unlocked_weapons = {weapon_cycle[0]}
                     show_briefing = True
                     player_dead = False
@@ -1329,6 +1390,8 @@ def run_runtime(smoke_test: bool = False, data_root: Path | None = None, quicklo
                 active_projectiles=active_projectiles,
                 shot_cooldown=shot_cooldown,
                 current_weapon_idx=current_weapon_idx,
+                pending_weapon_idx=pending_weapon_idx,
+                weapon_swap_timer=weapon_swap_timer,
                 unlocked_weapons=unlocked_weapons,
                 ammo_counts=ammo_counts,
                 magazine_counts=magazine_counts,
@@ -1353,26 +1416,39 @@ def run_runtime(smoke_test: bool = False, data_root: Path | None = None, quicklo
                 checkpoint_notice_text = "Checkpoint saved"
             checkpoint_notice_timer = 1.0
 
-        prev_weapon_idx = current_weapon_idx
-        while weapon_cycle[current_weapon_idx] not in unlocked_weapons and current_weapon_idx > 0:
-            current_weapon_idx -= 1
+        requested_weapon_idx = current_weapon_idx
+        while weapon_cycle[requested_weapon_idx] not in unlocked_weapons and requested_weapon_idx > 0:
+            requested_weapon_idx -= 1
         if weapon_cycle_step != 0:
-            current_weapon_idx = cycle_weapon_index(current_weapon_idx, weapon_cycle_step, weapon_cycle, unlocked_weapons)
-        current_weapon_idx = choose_fallback_weapon(
-            current_weapon_idx, weapon_cycle, unlocked_weapons, weapons_by_id, ammo_counts, magazine_counts
+            requested_weapon_idx = cycle_weapon_index(requested_weapon_idx, weapon_cycle_step, weapon_cycle, unlocked_weapons)
+        requested_weapon_idx = choose_fallback_weapon(
+            requested_weapon_idx, weapon_cycle, unlocked_weapons, weapons_by_id, ammo_counts, magazine_counts
         )
-        if reload_timer > 0.0 and prev_weapon_idx != current_weapon_idx:
-            selected_weapon_id = weapon_cycle[current_weapon_idx]
-            if reload_weapon_id is not None and selected_weapon_id != reload_weapon_id:
-                reload_timer = 0.0
-                reload_weapon_id = None
+        if pending_weapon_idx is None and requested_weapon_idx != current_weapon_idx:
+            requested_weapon_id = weapon_cycle[requested_weapon_idx]
+            if reload_timer > 0.0 and reload_weapon_id is not None and requested_weapon_id != reload_weapon_id:
+                reload_profile = handling_for(reload_weapon_id)
+                if bool(reload_profile["reload_interruptible"]):
+                    reload_timer = 0.0
+                    reload_weapon_id = None
+                else:
+                    requested_weapon_idx = current_weapon_idx
+            if requested_weapon_idx != current_weapon_idx:
+                pending_weapon_idx = requested_weapon_idx
+                requested_profile = handling_for(weapon_cycle[requested_weapon_idx])
+                weapon_swap_timer = max(weapon_swap_timer, float(requested_profile["swap_time"]))
+
+        if pending_weapon_idx is not None and weapon_swap_timer <= 0.0:
+            current_weapon_idx = pending_weapon_idx
+            pending_weapon_idx = None
 
         active_weapon = weapons_by_id[weapon_cycle[current_weapon_idx]]
+        active_profile = handling_for(active_weapon.id)
         target_enemy = enemy_in_sights(player, enemies, world, active_weapon.range)
         ammo_type = active_weapon.ammo_type
         reserve_ammo = ammo_counts.get(ammo_type, 0)
         magazine_ammo = magazine_counts.get(active_weapon.id, 0)
-        can_fire = magazine_ammo > 0 and reload_timer <= 0.0
+        can_fire = magazine_ammo > 0 and reload_timer <= 0.0 and weapon_swap_timer <= 0.0 and pending_weapon_idx is None
         if (
             reload_requested
             and simulation_active
@@ -1399,9 +1475,9 @@ def run_runtime(smoke_test: bool = False, data_root: Path | None = None, quicklo
                 else:
                     dynamic_spread = recoil_bloom
                     if moving:
-                        dynamic_spread += MOVE_SPREAD_RAD
+                        dynamic_spread += MOVE_SPREAD_RAD * float(active_profile["move_spread_mult"])
                     if is_sprinting:
-                        dynamic_spread += SPRINT_SPREAD_RAD
+                        dynamic_spread += SPRINT_SPREAD_RAD * float(active_profile["sprint_spread_mult"])
                     dynamic_spread = min(RECOIL_SPREAD_MAX_RAD, dynamic_spread)
                     if dynamic_spread > 0.0005:
                         ray_offsets = (random.uniform(-dynamic_spread, dynamic_spread),)
@@ -1421,12 +1497,7 @@ def run_runtime(smoke_test: bool = False, data_root: Path | None = None, quicklo
                         audio.play(event_name)
                     if fire.fired:
                         magazine_counts[active_weapon.id] = max(0, magazine_ammo - 1)
-                        if active_weapon.id == "smg":
-                            recoil_bloom = min(RECOIL_SPREAD_MAX_RAD, recoil_bloom + 0.0085)
-                        elif active_weapon.id == "autorifle":
-                            recoil_bloom = min(RECOIL_SPREAD_MAX_RAD, recoil_bloom + 0.006)
-                        elif active_weapon.id == "pistol":
-                            recoil_bloom = min(RECOIL_SPREAD_MAX_RAD, recoil_bloom + 0.01)
+                        recoil_bloom = min(RECOIL_SPREAD_MAX_RAD, recoil_bloom + float(active_profile["recoil_gain"]))
                         shots_fired += 1
                     if fire.hit_enemy:
                         shots_hit += 1
@@ -1452,7 +1523,8 @@ def run_runtime(smoke_test: bool = False, data_root: Path | None = None, quicklo
         damage_direction_timer = max(0.0, damage_direction_timer - decay_dt)
         hit_confirm_timer = max(0.0, hit_confirm_timer - decay_dt)
         kill_confirm_timer = max(0.0, kill_confirm_timer - decay_dt)
-        recoil_bloom = max(0.0, recoil_bloom - RECOIL_BLOOM_DECAY_PER_SECOND * decay_dt)
+        recoil_bloom = max(0.0, recoil_bloom - float(active_profile["recoil_decay"]) * decay_dt)
+        weapon_swap_timer = max(0.0, weapon_swap_timer - decay_dt)
         dry_fire_timer = max(0.0, dry_fire_timer - decay_dt)
         heal_flash_timer = max(0.0, heal_flash_timer - decay_dt)
         checkpoint_notice_timer = max(0.0, checkpoint_notice_timer - decay_dt)
@@ -1470,6 +1542,8 @@ def run_runtime(smoke_test: bool = False, data_root: Path | None = None, quicklo
                 world, player, enemies, pickups, ammo_pickups, health_pickups, level_title, level_win_condition = load_level_state(level_idx)
                 shot_cooldown = 0.0
                 current_weapon_idx = 0
+                pending_weapon_idx = None
+                weapon_swap_timer = 0.0
                 show_briefing = True
                 active_projectiles.clear()
                 objective_state = build_objective_state(campaign[level_idx].id)
@@ -1599,6 +1673,8 @@ def run_runtime(smoke_test: bool = False, data_root: Path | None = None, quicklo
             hud_lines.append("Press R to reload")
         elif reload_timer > 0.0 and reload_weapon_id == active_weapon.id:
             hud_lines.append("Reloading...")
+        elif weapon_swap_timer > 0.0 or pending_weapon_idx is not None:
+            hud_lines.append("Switching weapon...")
         if active_mag <= 3 and (active_mag + active_reserve) > 0:
             hud_lines.append("Low ammo")
         if dry_fire_timer > 0.0 and active_mag <= 0 and active_reserve <= 0:

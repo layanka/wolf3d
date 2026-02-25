@@ -40,6 +40,7 @@ Runtime shell data sources:
 - `Left Shift`/`Right Shift`: sprint (consumes stamina, auto-recovers)
 - `Left/Right` or `Q/E`: rotate
 - `Tab`: toggle mouse-look and cursor capture
+- `-` / `=`: decrease/increase mouse sensitivity
 - `Mouse wheel` or `[` `]`: cycle through unlocked weapons
 - `Space`: open/close door in front of you
 - `F` or left mouse click: shoot

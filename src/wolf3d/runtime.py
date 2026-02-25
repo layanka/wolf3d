@@ -50,6 +50,9 @@ MOVE_SPREAD_RAD = 0.012
 SPRINT_SPREAD_RAD = 0.02
 RECOIL_SPREAD_MAX_RAD = 0.055
 QUICKSAVE_FILE = "quicksave.pkl"
+MOUSE_SENSITIVITY_MIN = 0.0012
+MOUSE_SENSITIVITY_MAX = 0.0065
+MOUSE_SENSITIVITY_STEP = 0.0003
 
 
 @dataclass
@@ -350,6 +353,7 @@ def draw_help_overlay(surface: pygame.Surface, font: pygame.font.Font) -> None:
         "Hold Shift: sprint (uses stamina)",
         "Q/E or Left/Right: turn",
         "TAB: toggle mouse-look",
+        "- / =: adjust mouse sensitivity",
         "F or Left Click: fire",
         "Mouse Wheel / [ ]: cycle weapons",
         "Space: door interaction",
@@ -665,6 +669,8 @@ def run_runtime(smoke_test: bool = False, data_root: Path | None = None, quicklo
     checkpoint: RunCheckpoint | None = None
     checkpoint_notice_timer = 0.0
     checkpoint_notice_text = ""
+    settings_notice_timer = 0.0
+    settings_notice_text = ""
     show_help = False
     paused = False
     mouse_look = False
@@ -726,7 +732,7 @@ def run_runtime(smoke_test: bool = False, data_root: Path | None = None, quicklo
         nonlocal shots_fired, shots_hit, kills_total, level_kills, level_title
         nonlocal difficulty, stamina, sprint_exhausted, sprint_blend, show_briefing, player_dead, campaign_complete
         nonlocal dry_fire_timer, heal_flash_timer, paused, reload_timer, reload_weapon_id, step_timer, view_bob_phase, recoil_bloom
-        nonlocal checkpoint_notice_timer, checkpoint_notice_text
+        nonlocal checkpoint_notice_timer, checkpoint_notice_text, settings_notice_timer, settings_notice_text
 
         if checkpoint is None:
             return False
@@ -770,6 +776,8 @@ def run_runtime(smoke_test: bool = False, data_root: Path | None = None, quicklo
         recoil_bloom = 0.0
         checkpoint_notice_text = "Checkpoint restored"
         checkpoint_notice_timer = 1.0
+        settings_notice_timer = 0.0
+        settings_notice_text = ""
         return True
 
     if quickload:
@@ -815,6 +823,14 @@ def run_runtime(smoke_test: bool = False, data_root: Path | None = None, quicklo
                     mouse_look = not mouse_look
                     pygame.event.set_grab(mouse_look)
                     pygame.mouse.set_visible(not mouse_look)
+                elif event.key in (pygame.K_MINUS, pygame.K_KP_MINUS):
+                    mouse_sensitivity = max(MOUSE_SENSITIVITY_MIN, mouse_sensitivity - MOUSE_SENSITIVITY_STEP)
+                    settings_notice_text = f"Mouse sensitivity: {mouse_sensitivity:.4f}"
+                    settings_notice_timer = 1.0
+                elif event.key in (pygame.K_EQUALS, pygame.K_PLUS, pygame.K_KP_PLUS):
+                    mouse_sensitivity = min(MOUSE_SENSITIVITY_MAX, mouse_sensitivity + MOUSE_SENSITIVITY_STEP)
+                    settings_notice_text = f"Mouse sensitivity: {mouse_sensitivity:.4f}"
+                    settings_notice_timer = 1.0
                 elif event.key == pygame.K_SPACE:
                     if not paused and not show_briefing and not player_dead and not campaign_complete:
                         if world.toggle_door_in_front(player):
@@ -1186,6 +1202,7 @@ def run_runtime(smoke_test: bool = False, data_root: Path | None = None, quicklo
         dry_fire_timer = max(0.0, dry_fire_timer - decay_dt)
         heal_flash_timer = max(0.0, heal_flash_timer - decay_dt)
         checkpoint_notice_timer = max(0.0, checkpoint_notice_timer - decay_dt)
+        settings_notice_timer = max(0.0, settings_notice_timer - decay_dt)
         was_reloading = reload_timer > 0.0
         reload_timer = max(0.0, reload_timer - decay_dt)
         if was_reloading and reload_timer <= 0.0 and reload_weapon_id is not None:
@@ -1316,6 +1333,8 @@ def run_runtime(smoke_test: bool = False, data_root: Path | None = None, quicklo
             hud_lines.append("Medkit used")
         if checkpoint_notice_timer > 0.0:
             hud_lines.append(checkpoint_notice_text)
+        if settings_notice_timer > 0.0:
+            hud_lines.append(settings_notice_text)
         nav_hint = objective_nav_hint(player, current_objective_target(objective_state, enemies))
         if nav_hint is not None:
             hud_lines.append(nav_hint)

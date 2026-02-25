@@ -9,6 +9,7 @@ from src.wolf3d.world.simulation import WorldSimulation
 
 ENEMY_RADIUS = 0.12
 PLAYER_COLLISION_RADIUS = 0.24
+BASE_PROJECTILE_SPREAD = 0.028
 
 
 def update_enemies(
@@ -169,11 +170,11 @@ def _attack_cadence(spec: EnemyType, enemy: EnemyState, distance: float, preferr
     if spec.behavior == "boss_phase":
         burst = 0.12 if math.sin(enemy.behavior_phase * 2.3) > 0.7 else 0.0
         range_penalty = 0.08 if distance < preferred_range - 1.0 else 0.0
-        return max(0.34, 0.5 - burst + range_penalty)
+        return max(0.4, 0.56 - burst + range_penalty)
     if spec.behavior == "aggressive_flank":
         pressure_bonus = 0.08 if distance > preferred_range + 1.2 else 0.0
-        return max(0.5, 0.64 - pressure_bonus)
-    return 0.88
+        return max(0.56, 0.7 - pressure_bonus)
+    return 0.94
 
 
 def _melee_cadence(spec: EnemyType, distance: float, preferred_range: float) -> float:
@@ -186,18 +187,18 @@ def _melee_cadence(spec: EnemyType, distance: float, preferred_range: float) -> 
 
 def _projectile_speed(spec: EnemyType) -> float:
     if spec.behavior == "boss_phase":
-        return 8.4
+        return 7.8
     if spec.behavior == "aggressive_flank":
-        return 7.5
-    return 5.9
+        return 7.0
+    return 5.5
 
 
 def _projectile_spread(enemy: EnemyState) -> float:
-    base = 0.03
+    base = BASE_PROJECTILE_SPREAD
     if enemy.type_id == "assault":
-        base = 0.045
+        base = 0.04
     elif enemy.type_id == "commander":
-        base = 0.035
+        base = 0.032
     return base * math.sin(enemy.behavior_phase * 3.2 + len(enemy.type_id))
 
 

@@ -69,9 +69,9 @@ OBJECTIVE_ARROW_Y = 16
 OBJECTIVE_ARROW_SIZE = 6
 NEAR_MISS_TIMER_SECONDS = 0.22
 DAMAGE_DIR_TIMER_SECONDS = 0.4
-SHOTGUN_SLUG_DAMAGE = 38
-SHOTGUN_SLUG_RANGE_BONUS = 4.0
-SHOTGUN_SLUG_COOLDOWN_MULT = 1.28
+SHOTGUN_SLUG_DAMAGE = 44
+SHOTGUN_SLUG_RANGE_BONUS = 5.0
+SHOTGUN_SLUG_COOLDOWN_MULT = 1.35
 LEVEL_ECON_BONUS_PER_LEVEL = 0.12
 LEVEL_ECON_MAX_BONUS = 0.24
 
@@ -409,6 +409,7 @@ def draw_help_overlay(surface: pygame.Surface, font: pygame.font.Font) -> None:
         "Z: minimap zoom",
         "F1/F2/F3: difficulty",
         "F6: toggle perf HUD",
+        "F7: toggle debug HUD details",
         "H: toggle help",
         "P: pause/resume",
         "Q (while paused): quit (confirm)",
@@ -934,6 +935,7 @@ def run_runtime(smoke_test: bool = False, data_root: Path | None = None, quicklo
     settings_notice_text = ""
     show_help = False
     show_perf_hud = bool(settings.get("show_perf_hud", False))
+    show_debug_hud = False
     paused = False
     pause_quit_confirm_timer = 0.0
     campaign_restart_confirm_timer = 0.0
@@ -1232,6 +1234,10 @@ def run_runtime(smoke_test: bool = False, data_root: Path | None = None, quicklo
                     show_perf_hud = not show_perf_hud
                     persist_runtime_settings()
                     settings_notice_text = "Perf HUD: on" if show_perf_hud else "Perf HUD: off"
+                    settings_notice_timer = 1.0
+                elif event.key == pygame.K_F7:
+                    show_debug_hud = not show_debug_hud
+                    settings_notice_text = "Debug HUD: on" if show_debug_hud else "Debug HUD: off"
                     settings_notice_timer = 1.0
                 elif event.key == pygame.K_p:
                     paused = not paused
@@ -1883,7 +1889,10 @@ def run_runtime(smoke_test: bool = False, data_root: Path | None = None, quicklo
         render_projectiles(surface, player, active_projectiles, fov, depth_buffer, view_center_y)
 
         snapshot = build_frame_snapshot(player, enemies, world, shot_cooldown, active_weapon.label)
-        hud_lines = [f"Level {level_idx + 1}/{len(campaign)}: {level_title}"] + format_hud_lines(snapshot)
+        hud_lines = [f"Level {level_idx + 1}/{len(campaign)}: {level_title}"] + format_hud_lines(
+            snapshot,
+            show_debug=show_debug_hud,
+        )
         hud_lines.append(f"Goal: {level_win_condition}")
         if level_cleared:
             if campaign_complete:

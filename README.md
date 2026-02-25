@@ -51,6 +51,7 @@ Runtime shell data sources:
 - `9` / `0`: decrease/increase audio volume
 - `F10`: mute/unmute audio
 - `F6`: toggle performance HUD (FPS/frame-time/counters)
+- `F7`: toggle debug HUD details (player coords/angle)
 - `Mouse wheel` or `[` `]`: cycle through unlocked weapons
 - `Space`: open/close door in front of you
 - `F` or left mouse click: shoot
@@ -137,6 +138,7 @@ Expected visuals:
 - Runtime starts with an in-game title/options shell (new run or continue quick-save)
 - Pause/quit and campaign-restart flows now require explicit confirmation for destructive transitions
 - Minimap rendering now caches static map tiles and draws only dynamic layers each frame
+- Combat balance pass tuned weapon cadence/roles and enemy pressure curves for smoother pacing
 
 Audio source and license notes:
 - [assets/audio/CREDITS.md](/Users/philippe.lefebvre2/Code/testing1/assets/audio/CREDITS.md)

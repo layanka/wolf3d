@@ -45,6 +45,7 @@ Runtime shell data sources:
 - `Enter`: dismiss level briefing / advance to next level after level clear (runtime shell)
 - `R`: retry current level after death (runtime shell)
 - `N`: restart campaign after final level completion (runtime shell)
+- `F1/F2/F3`: set difficulty (`easy` / `normal` / `hard`) at runtime
 - `Esc`: quit
 
 Door behavior:
@@ -78,6 +79,7 @@ Expected visuals:
 - Weapons now consume ammo by ammo type, with pickup and between-level ammo gains
 - Defeated enemies drop ammo packs (shown as cyan dots on minimap)
 - Runtime auto-switches to another unlocked weapon when current ammo is empty
+- Difficulty now scales incoming damage and ammo gains (drops/pickups/resupply)
 
 Audio source and license notes:
 - [assets/audio/CREDITS.md](/Users/philippe.lefebvre2/Code/testing1/assets/audio/CREDITS.md)

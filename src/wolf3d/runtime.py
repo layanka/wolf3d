@@ -44,6 +44,20 @@ class ObjectiveState:
     nodes: list[ObjectiveNode] = field(default_factory=list)
 
 
+@dataclass(frozen=True)
+class DifficultyProfile:
+    id: Literal["easy", "normal", "hard"]
+    damage_mult: float
+    ammo_gain_mult: float
+
+
+DIFFICULTY_PROFILES: dict[str, DifficultyProfile] = {
+    "easy": DifficultyProfile(id="easy", damage_mult=0.75, ammo_gain_mult=1.35),
+    "normal": DifficultyProfile(id="normal", damage_mult=1.0, ammo_gain_mult=1.0),
+    "hard": DifficultyProfile(id="hard", damage_mult=1.35, ammo_gain_mult=0.75),
+}
+
+
 def build_objective_state(level_id: str) -> ObjectiveState:
     if level_id == "level_01":
         return ObjectiveState(
@@ -231,30 +245,37 @@ def format_duration(seconds: float) -> str:
     return f"{minutes:02d}:{secs:02d}"
 
 
-def default_ammo_counts() -> dict[str, int]:
-    return {"light": 60, "shell": 12, "rifle": 0}
+def _scale_ammo(values: dict[str, int], ammo_gain_mult: float) -> dict[str, int]:
+    scaled: dict[str, int] = {}
+    for ammo_type, amount in values.items():
+        scaled[ammo_type] = max(1, int(round(amount * ammo_gain_mult)))
+    return scaled
 
 
-def pickup_ammo_bonus(weapon_id: str) -> dict[str, int]:
+def default_ammo_counts(ammo_gain_mult: float) -> dict[str, int]:
+    return _scale_ammo({"light": 60, "shell": 12, "rifle": 0}, ammo_gain_mult)
+
+
+def pickup_ammo_bonus(weapon_id: str, ammo_gain_mult: float) -> dict[str, int]:
     if weapon_id == "smg":
-        return {"light": 30}
+        return _scale_ammo({"light": 30}, ammo_gain_mult)
     if weapon_id == "shotgun":
-        return {"shell": 10}
+        return _scale_ammo({"shell": 10}, ammo_gain_mult)
     if weapon_id == "autorifle":
-        return {"rifle": 48}
-    return {"light": 12}
+        return _scale_ammo({"rifle": 48}, ammo_gain_mult)
+    return _scale_ammo({"light": 12}, ammo_gain_mult)
 
 
-def enemy_drop_ammo(enemy_type_id: str) -> dict[str, int]:
+def enemy_drop_ammo(enemy_type_id: str, ammo_gain_mult: float) -> dict[str, int]:
     if enemy_type_id == "guard":
-        return {"light": 8}
+        return _scale_ammo({"light": 8}, ammo_gain_mult)
     if enemy_type_id == "assault":
-        return {"rifle": 12}
+        return _scale_ammo({"rifle": 12}, ammo_gain_mult)
     if enemy_type_id == "hound":
-        return {"light": 4}
+        return _scale_ammo({"light": 4}, ammo_gain_mult)
     if enemy_type_id == "commander":
-        return {"rifle": 24, "shell": 6}
-    return {"light": 5}
+        return _scale_ammo({"rifle": 24, "shell": 6}, ammo_gain_mult)
+    return _scale_ammo({"light": 5}, ammo_gain_mult)
 
 
 def choose_fallback_weapon(
@@ -321,7 +342,8 @@ def run_runtime(smoke_test: bool = False, data_root: Path | None = None) -> None
     shots_hit = 0
     kills_total = 0
     level_kills = 0
-    ammo_counts = default_ammo_counts()
+    difficulty = DIFFICULTY_PROFILES["normal"]
+    ammo_counts = default_ammo_counts(difficulty.ammo_gain_mult)
     dry_fire_timer = 0.0
 
     level_idx = 0
@@ -422,8 +444,14 @@ def run_runtime(smoke_test: bool = False, data_root: Path | None = None) -> None
                     shots_hit = 0
                     kills_total = 0
                     level_kills = 0
-                    ammo_counts = default_ammo_counts()
+                    ammo_counts = default_ammo_counts(difficulty.ammo_gain_mult)
                     dry_fire_timer = 0.0
+                elif event.key == pygame.K_F1:
+                    difficulty = DIFFICULTY_PROFILES["easy"]
+                elif event.key == pygame.K_F2:
+                    difficulty = DIFFICULTY_PROFILES["normal"]
+                elif event.key == pygame.K_F3:
+                    difficulty = DIFFICULTY_PROFILES["hard"]
             elif event.type == pygame.MOUSEBUTTONDOWN and event.button == 1:
                 fire_requested = True
 
@@ -453,7 +481,7 @@ def run_runtime(smoke_test: bool = False, data_root: Path | None = None) -> None
             active_projectiles.extend(spawned_projectiles)
 
         active_projectiles, projectile_damage = update_projectiles(world, player, active_projectiles, dt)
-        enemy_damage_scale = 1.0 + level_idx * 0.2
+        enemy_damage_scale = (1.0 + level_idx * 0.2) * difficulty.damage_mult
         scaled_damage = int(math.ceil((melee_damage + projectile_damage) * enemy_damage_scale))
         if scaled_damage > 0:
             damage_flash_timer = 0.17
@@ -466,7 +494,7 @@ def run_runtime(smoke_test: bool = False, data_root: Path | None = None) -> None
             if dx * dx + dy * dy <= 0.35 * 0.35:
                 pickup_type = str(pickup["type"])
                 unlocked_weapons.add(pickup_type)
-                for ammo_type, amount in pickup_ammo_bonus(pickup_type).items():
+                for ammo_type, amount in pickup_ammo_bonus(pickup_type, difficulty.ammo_gain_mult).items():
                     ammo_counts[ammo_type] = ammo_counts.get(ammo_type, 0) + amount
                 if objective_state.keycard_weapon_id == pickup_type:
                     objective_state.keycard_collected = True
@@ -484,7 +512,7 @@ def run_runtime(smoke_test: bool = False, data_root: Path | None = None) -> None
             if enemy.alive or enemy.loot_dropped:
                 continue
             enemy.loot_dropped = True
-            for ammo_type, amount in enemy_drop_ammo(enemy.type_id).items():
+            for ammo_type, amount in enemy_drop_ammo(enemy.type_id, difficulty.ammo_gain_mult).items():
                 ammo_pickups.append(
                     {"ammo_type": ammo_type, "amount": float(amount), "x": enemy.x, "y": enemy.y}
                 )
@@ -555,9 +583,11 @@ def run_runtime(smoke_test: bool = False, data_root: Path | None = None) -> None
                 show_briefing = True
                 active_projectiles.clear()
                 objective_state = build_objective_state(campaign[level_idx].id)
-                ammo_counts["light"] = ammo_counts.get("light", 0) + 12
-                ammo_counts["shell"] = ammo_counts.get("shell", 0) + 4
-                ammo_counts["rifle"] = ammo_counts.get("rifle", 0) + 10
+                for ammo_type, amount in _scale_ammo(
+                    {"light": 12, "shell": 4, "rifle": 10},
+                    difficulty.ammo_gain_mult,
+                ).items():
+                    ammo_counts[ammo_type] = ammo_counts.get(ammo_type, 0) + amount
                 level_elapsed = 0.0
                 level_kills = 0
             else:
@@ -612,6 +642,7 @@ def run_runtime(smoke_test: bool = False, data_root: Path | None = None) -> None
         hud_lines.append(
             f"Reserves L/S/R: {ammo_counts.get('light', 0)}/{ammo_counts.get('shell', 0)}/{ammo_counts.get('rifle', 0)}"
         )
+        hud_lines.append(f"Difficulty: {difficulty.id} (F1/F2/F3)")
         if ammo_counts.get(ammo_type, 0) <= 3:
             hud_lines.append("Low ammo")
         if dry_fire_timer > 0.0:

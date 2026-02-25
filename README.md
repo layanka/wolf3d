@@ -102,6 +102,7 @@ Expected visuals:
 - Camera now adds subtle movement head-bob, sprint FOV kick, and light hit-impact kick
 - Non-shotgun weapons now lose accuracy while moving/sprinting and during sustained recoil bloom
 - Crosshair now expands with recoil instability and turns blue while reloading
+- Crosshair now shows hit and kill marker pulses on confirmed damage/down
 - HUD now provides objective direction and distance guidance
 - Crosshair now turns red when an enemy is in direct line of fire
 - HUD/briefing now display each level's campaign goal text (`win_condition`)

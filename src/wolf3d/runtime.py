@@ -57,6 +57,8 @@ MOUSE_SENSITIVITY_MAX = 0.0065
 MOUSE_SENSITIVITY_STEP = 0.0003
 CROSSHAIR_BASE_RADIUS = 4
 CROSSHAIR_MAX_BLOOM = 9
+HITMARKER_RADIUS = 8
+KILLMARKER_RADIUS = 11
 
 
 @dataclass
@@ -697,6 +699,7 @@ def run_runtime(smoke_test: bool = False, data_root: Path | None = None, quicklo
     weapon_fx_id = weapon_cycle[0]
     damage_flash_timer = 0.0
     hit_confirm_timer = 0.0
+    kill_confirm_timer = 0.0
     campaign_elapsed = 0.0
     level_elapsed = 0.0
     shots_fired = 0
@@ -777,7 +780,7 @@ def run_runtime(smoke_test: bool = False, data_root: Path | None = None, quicklo
         nonlocal shots_fired, shots_hit, kills_total, level_kills, level_title
         nonlocal difficulty, stamina, sprint_exhausted, sprint_blend, show_briefing, player_dead, campaign_complete
         nonlocal dry_fire_timer, heal_flash_timer, paused, reload_timer, reload_weapon_id, step_timer, view_bob_phase, recoil_bloom
-        nonlocal checkpoint_notice_timer, checkpoint_notice_text, settings_notice_timer, settings_notice_text
+        nonlocal checkpoint_notice_timer, checkpoint_notice_text, settings_notice_timer, settings_notice_text, kill_confirm_timer
 
         if checkpoint is None:
             return False
@@ -815,6 +818,7 @@ def run_runtime(smoke_test: bool = False, data_root: Path | None = None, quicklo
         campaign_complete = False
         dry_fire_timer = 0.0
         heal_flash_timer = 0.0
+        kill_confirm_timer = 0.0
         paused = False
         step_timer = 0.0
         view_bob_phase = 0.0
@@ -945,6 +949,7 @@ def run_runtime(smoke_test: bool = False, data_root: Path | None = None, quicklo
                     campaign_complete = False
                     dry_fire_timer = 0.0
                     heal_flash_timer = 0.0
+                    kill_confirm_timer = 0.0
                     step_timer = 0.0
                     view_bob_phase = 0.0
                     recoil_bloom = 0.0
@@ -973,6 +978,7 @@ def run_runtime(smoke_test: bool = False, data_root: Path | None = None, quicklo
                     reload_weapon_id = None
                     dry_fire_timer = 0.0
                     heal_flash_timer = 0.0
+                    kill_confirm_timer = 0.0
                     stamina = STAMINA_MAX
                     sprint_exhausted = False
                     sprint_blend = 0.0
@@ -1233,6 +1239,8 @@ def run_runtime(smoke_test: bool = False, data_root: Path | None = None, quicklo
                     if fire.hit_enemy:
                         shots_hit += 1
                         hit_confirm_timer = 0.08
+                    if fire.enemy_down:
+                        kill_confirm_timer = 0.14
                     weapon_fx_id = active_weapon.id
                     if active_weapon.id == "smg":
                         weapon_fx_timer = 0.045
@@ -1247,6 +1255,7 @@ def run_runtime(smoke_test: bool = False, data_root: Path | None = None, quicklo
         weapon_fx_timer = max(0.0, weapon_fx_timer - decay_dt)
         damage_flash_timer = max(0.0, damage_flash_timer - decay_dt)
         hit_confirm_timer = max(0.0, hit_confirm_timer - decay_dt)
+        kill_confirm_timer = max(0.0, kill_confirm_timer - decay_dt)
         recoil_bloom = max(0.0, recoil_bloom - RECOIL_BLOOM_DECAY_PER_SECOND * decay_dt)
         dry_fire_timer = max(0.0, dry_fire_timer - decay_dt)
         heal_flash_timer = max(0.0, heal_flash_timer - decay_dt)
@@ -1277,6 +1286,7 @@ def run_runtime(smoke_test: bool = False, data_root: Path | None = None, quicklo
                         refill_weapon_magazine(weapon_id, weapons_by_id, ammo_counts, magazine_counts)
                 level_elapsed = 0.0
                 level_kills = 0
+                kill_confirm_timer = 0.0
                 sprint_exhausted = False
                 sprint_blend = 0.0
                 step_timer = 0.0
@@ -1410,6 +1420,18 @@ def run_runtime(smoke_test: bool = False, data_root: Path | None = None, quicklo
         dynamic_radius = CROSSHAIR_BASE_RADIUS + int(round((CROSSHAIR_MAX_BLOOM - CROSSHAIR_BASE_RADIUS) * bloom_factor))
         pygame.draw.line(surface, crosshair_color, (cx - dynamic_radius, cy), (cx + dynamic_radius, cy), 1)
         pygame.draw.line(surface, crosshair_color, (cx, cy - dynamic_radius), (cx, cy + dynamic_radius), 1)
+        if hit_confirm_timer > 0.0:
+            hm_color = (245, 245, 245)
+            hm_r = HITMARKER_RADIUS
+            pygame.draw.line(surface, hm_color, (cx - hm_r, cy - hm_r), (cx - hm_r // 2, cy - hm_r // 2), 1)
+            pygame.draw.line(surface, hm_color, (cx + hm_r, cy - hm_r), (cx + hm_r // 2, cy - hm_r // 2), 1)
+            pygame.draw.line(surface, hm_color, (cx - hm_r, cy + hm_r), (cx - hm_r // 2, cy + hm_r // 2), 1)
+            pygame.draw.line(surface, hm_color, (cx + hm_r, cy + hm_r), (cx + hm_r // 2, cy + hm_r // 2), 1)
+        if kill_confirm_timer > 0.0:
+            km_color = (140, 240, 140)
+            km_r = KILLMARKER_RADIUS
+            pygame.draw.line(surface, km_color, (cx - km_r, cy - km_r), (cx + km_r, cy + km_r), 1)
+            pygame.draw.line(surface, km_color, (cx + km_r, cy - km_r), (cx - km_r, cy + km_r), 1)
         draw_weapon_vfx(surface, weapon_fx_id, weapon_fx_timer, view_center_y)
 
         if show_minimap:

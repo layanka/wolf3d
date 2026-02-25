@@ -2,11 +2,14 @@ from __future__ import annotations
 
 from pathlib import Path
 
+from src.wolf3d.audio.manager import route_simulation_audio_events
 from src.wolf3d.entrypoint import bootstrap
 from src.wolf3d.content_loader import load_enemy_types, load_level_specs, load_weapon_types
 from src.wolf3d.entities.models import EnemyState, PlayerState
 from src.wolf3d.gameplay.combat import attempt_fire
 from src.wolf3d.gameplay_state import summarize_level_gameplay
+from src.wolf3d.render.frame import build_frame_snapshot
+from src.wolf3d.ui.hud import format_hud_lines
 from src.wolf3d.world.simulation import WorldSimulation
 from src.wolf3d.world_state import build_world_state
 
@@ -53,9 +56,16 @@ def main() -> None:
     door_toggled = world_sim.toggle_door_in_front(player)
     world_sim.update_doors(player, 0.016)
     fire = attempt_fire(0.0, player, world_sim, enemy)
+    audio_events = route_simulation_audio_events(door_toggled, fire)
+    frame = build_frame_snapshot(player, enemy, world_sim, fire.next_cooldown)
+    hud_lines = format_hud_lines(frame)
     print(f"World sim smoke: door_toggled={door_toggled} first_door_open_amount={next(iter(world_sim.doors.values())).open_amount:.2f}")
     print(f"Combat smoke: fired={fire.fired} hit_enemy={fire.hit_enemy} enemy_down={fire.enemy_down} impact={fire.impact_distance:.2f}")
-    print("Real game runtime shell is initialized. Next step: split render/audio runtime from poc_game.py")
+    print(f"Audio route smoke: events={audio_events}")
+    print("HUD smoke:")
+    for line in hud_lines:
+        print(f"  - {line}")
+    print("Real game runtime shell is initialized. Next step: extract loop/render/audio runtime from poc_game.py")
 
 
 if __name__ == "__main__":

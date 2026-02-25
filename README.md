@@ -124,6 +124,7 @@ Expected visuals:
 - Shotgun now supports alt-fire slug mode with higher precision/range and slower cadence
 - Enemy loot economy now scales by difficulty and level, with chance-based ammo/medkit drops
 - Levels now support scripted trigger encounters (announcement + reinforcement spawns)
+- Campaign briefings now follow a single narrative arc with clearer objective wording
 
 Audio source and license notes:
 - [assets/audio/CREDITS.md](/Users/philippe.lefebvre2/Code/testing1/assets/audio/CREDITS.md)

@@ -5,22 +5,22 @@
     {
       "id": "level_01",
       "title": "Breach Point",
-      "briefing": "Infiltrate the outer garrison and secure the elevator key.",
-      "win_condition": "Reach extraction door with keycard",
+      "briefing": "You are inside the perimeter. Seize the elevator keycard from the garrison floor and reach extraction before a lockdown starts.",
+      "win_condition": "Objective: secure the keycard and activate extraction",
       "next_level": "level_02"
     },
     {
       "id": "level_02",
       "title": "Machine Hall",
-      "briefing": "Shut down the refinery core while hostile patrols converge.",
-      "win_condition": "Disable all three control consoles",
+      "briefing": "The stolen keycard grants access to the refinery wing. Disable all three control consoles to crash the production line and force command to respond.",
+      "win_condition": "Objective: disable every refinery control console",
       "next_level": "level_03"
     },
     {
       "id": "level_03",
       "title": "Command Vault",
-      "briefing": "Defeat the commander and transmit the extraction beacon.",
-      "win_condition": "Eliminate commander and activate beacon",
+      "briefing": "With the refinery dark, command is isolated. Eliminate the commander in the vault, then transmit the beacon to guide allied extraction.",
+      "win_condition": "Objective: eliminate the commander and activate the beacon",
       "next_level": null
     }
   ]

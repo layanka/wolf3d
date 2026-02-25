@@ -75,9 +75,9 @@ Living feature backlog for the full game (post-PoC), with sprint IDs, status, or
 ### Planned: Level and Content Pipeline
 - `FS-020` `done`: Level scripting events (triggered spawns/locks/objective beats).
   - Accept: at least one scripted encounter per level.
-- `FS-021` `next`: Story/briefing pass (consistent narrative arc and objective language).
+- `FS-021` `done`: Story/briefing pass (consistent narrative arc and objective language).
   - Accept: briefings clearly communicate stakes and level intent.
-- `FS-022` `planned`: Extended map set prep (3 production-ready levels with pacing pass).
+- `FS-022` `next`: Extended map set prep (3 production-ready levels with pacing pass).
   - Accept: each level has distinct route/encounter identity.
 
 ### Planned: Menus and Frontend Shell

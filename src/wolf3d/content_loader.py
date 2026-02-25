@@ -11,6 +11,17 @@ def _read_json(path: Path) -> dict:
         return json.load(f)
 
 
+def _read_map(path: Path) -> list[str]:
+    with path.open("r", encoding="utf-8") as f:
+        rows = [line.strip() for line in f if line.strip()]
+    if not rows:
+        raise ValueError(f"map file is empty: {path}")
+    width = len(rows[0])
+    if any(len(r) != width for r in rows):
+        raise ValueError(f"map rows have inconsistent width: {path}")
+    return rows
+
+
 def load_campaign(data_root: Path) -> list[CampaignLevel]:
     raw = _read_json(data_root / "campaign.json")
     levels = []
@@ -98,3 +109,10 @@ def validate_cross_refs(campaign: list[CampaignLevel], levels: list[LevelSpec], 
         for pickup in level.weapon_pickups:
             if pickup["type"] not in weapon_ids:
                 raise ValueError(f"level {level.id} has unknown weapon type: {pickup['type']}")
+
+
+def load_level_map(data_root: Path, level: LevelSpec) -> list[str]:
+    map_path = data_root / level.map_file
+    if not map_path.exists():
+        raise ValueError(f"level {level.id} map file missing: {level.map_file}")
+    return _read_map(map_path)

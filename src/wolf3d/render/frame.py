@@ -11,24 +11,25 @@ class FrameSnapshot:
     player_x: float
     player_y: float
     player_angle: float
-    enemy_alive: bool
-    enemy_health: int
+    enemies_alive: int
+    enemies_total: int
     weapon_cooldown: float
     door_in_front: bool
 
 
 def build_frame_snapshot(
     player: PlayerState,
-    enemy: EnemyState,
+    enemies: list[EnemyState],
     world: WorldSimulation,
     weapon_cooldown: float,
 ) -> FrameSnapshot:
+    alive = sum(1 for e in enemies if e.alive)
     return FrameSnapshot(
         player_x=player.x,
         player_y=player.y,
         player_angle=player.angle,
-        enemy_alive=enemy.alive,
-        enemy_health=enemy.health,
+        enemies_alive=alive,
+        enemies_total=len(enemies),
         weapon_cooldown=weapon_cooldown,
         door_in_front=world.find_door_in_front(player) is not None,
     )

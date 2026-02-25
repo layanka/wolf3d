@@ -1,6 +1,6 @@
 {
   "id": "level_02",
-  "map_file": "TBD",
+  "map_file": "maps/level_02.map",
   "spawn": {"x": 2.5, "y": 2.5, "angle": 0.2},
   "enemy_spawns": [
     {"type": "assault", "x": 8.5, "y": 4.5},

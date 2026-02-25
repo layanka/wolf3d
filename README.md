@@ -27,6 +27,11 @@ UV_CACHE_DIR=.uv-cache uv run python poc_game.py
 UV_CACHE_DIR=.uv-cache uv run python -m src.wolf3d.runtime_entry
 ```
 
+Runtime shell data sources:
+- `game_data/campaign.json`
+- `game_data/levels/*.json`
+- `game_data/maps/*.map`
+
 ### Controls
 
 - `W/S` or `Up/Down`: move forward/backward
@@ -35,6 +40,7 @@ UV_CACHE_DIR=.uv-cache uv run python -m src.wolf3d.runtime_entry
 - `Space`: open/close door in front of you
 - `F` or left mouse click: shoot
 - `M`: toggle minimap
+- `Enter`: advance to next level after level clear (runtime shell)
 - `Esc`: quit
 
 Door behavior:

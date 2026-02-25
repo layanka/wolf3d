@@ -2,65 +2,75 @@ from __future__ import annotations
 
 import math
 import os
+from pathlib import Path
 
 import pygame
 
 from src.wolf3d.audio.manager import route_simulation_audio_events
+from src.wolf3d.content_loader import (
+    load_campaign,
+    load_enemy_types,
+    load_level_map,
+    load_level_specs,
+    load_weapon_types,
+    validate_cross_refs,
+)
 from src.wolf3d.entities.models import EnemyState, PlayerState
-from src.wolf3d.gameplay.combat import attempt_fire, normalize_angle
+from src.wolf3d.gameplay.combat import attempt_fire_multi, normalize_angle
 from src.wolf3d.render.frame import build_frame_snapshot
 from src.wolf3d.ui.hud import format_hud_lines
 from src.wolf3d.world.simulation import WorldSimulation
 
 
-DEFAULT_MAP = [
-    "111111111111",
-    "100000000001",
-    "101111011101",
-    "100002000001",
-    "101101111101",
-    "100100000001",
-    "101101011101",
-    "100001000001",
-    "101111011101",
-    "100000000001",
-    "111111111111",
-]
-
-
-def render_enemy(surface: pygame.Surface, enemy: EnemyState, player: PlayerState, fov: float, depth_buffer: list[float]) -> None:
-    if not enemy.alive:
-        return
+def render_enemies(
+    surface: pygame.Surface,
+    enemies: list[EnemyState],
+    player: PlayerState,
+    fov: float,
+    depth_buffer: list[float],
+) -> None:
     w, h = surface.get_width(), surface.get_height()
+    for enemy in enemies:
+        if not enemy.alive:
+            continue
 
-    dx = enemy.x - player.x
-    dy = enemy.y - player.y
-    distance = math.hypot(dx, dy)
-    if distance <= 0.05:
-        return
+        dx = enemy.x - player.x
+        dy = enemy.y - player.y
+        distance = math.hypot(dx, dy)
+        if distance <= 0.05:
+            continue
 
-    angle = normalize_angle(math.atan2(dy, dx) - player.angle)
-    if abs(angle) > fov * 0.65:
-        return
+        angle = normalize_angle(math.atan2(dy, dx) - player.angle)
+        if abs(angle) > fov * 0.65:
+            continue
 
-    screen_x = int((angle / fov + 0.5) * w)
-    sprite_h = max(8, min(int(h / distance), h))
-    sprite_w = max(4, sprite_h // 2)
-    top = (h - sprite_h) // 2
-    bottom = top + sprite_h
-    left = screen_x - sprite_w // 2
-    right = left + sprite_w
+        screen_x = int((angle / fov + 0.5) * w)
+        sprite_h = max(8, min(int(h / distance), h))
+        sprite_w = max(4, sprite_h // 2)
+        top = (h - sprite_h) // 2
+        bottom = top + sprite_h
+        left = screen_x - sprite_w // 2
+        right = left + sprite_w
 
-    intensity = max(45, int(230 / (1.0 + distance * 0.18)))
-    color = (intensity, max(20, intensity // 4), max(20, intensity // 4))
-    for col in range(max(0, left), min(w, right)):
-        if distance < depth_buffer[col]:
-            pygame.draw.line(surface, color, (col, top), (col, bottom))
+        intensity = max(45, int(230 / (1.0 + distance * 0.18)))
+        color = (intensity, max(20, intensity // 4), max(20, intensity // 4))
+        for col in range(max(0, left), min(w, right)):
+            if distance < depth_buffer[col]:
+                pygame.draw.line(surface, color, (col, top), (col, bottom))
 
 
-def run_runtime(smoke_test: bool = False) -> None:
+def run_runtime(smoke_test: bool = False, data_root: Path | None = None) -> None:
     if smoke_test:
         os.environ["SDL_VIDEODRIVER"] = "dummy"
+
+    if data_root is None:
+        data_root = Path(__file__).resolve().parents[2] / "game_data"
+
+    campaign = load_campaign(data_root)
+    enemy_types = {e.id: e for e in load_enemy_types(data_root)}
+    level_specs = {l.id: l for l in load_level_specs(data_root)}
+    weapon_types = load_weapon_types(data_root)
+    validate_cross_refs(campaign, list(level_specs.values()), list(enemy_types.values()), weapon_types)
 
     pygame.init()
     screen_w, screen_h = 960, 600
@@ -69,22 +79,44 @@ def run_runtime(smoke_test: bool = False) -> None:
     surface = pygame.Surface((internal_w, internal_h))
     font = pygame.font.Font(None, 18)
     clock = pygame.time.Clock()
-    pygame.display.set_caption("Wolf3D Real Runtime (Extracted)")
+    pygame.display.set_caption("Wolf3D Real Runtime (Campaign Shell)")
 
-    world = WorldSimulation(DEFAULT_MAP)
-    player = PlayerState(x=1.5, y=1.5, angle=0.2)
-    enemy = EnemyState(type_id="guard", x=8.5, y=3.5, health=50)
     fov = math.radians(60)
-
     show_minimap = True
     shot_cooldown = 0.0
+
+    level_idx = 0
+
+    def load_level_state(index: int) -> tuple[WorldSimulation, PlayerState, list[EnemyState], str]:
+        campaign_level = campaign[index]
+        spec = level_specs[campaign_level.id]
+        tile_map = load_level_map(data_root, spec)
+        world = WorldSimulation(tile_map)
+        spawn = spec.spawn
+        player = PlayerState(x=float(spawn.get("x", 1.5)), y=float(spawn.get("y", 1.5)), angle=float(spawn.get("angle", 0.0)))
+        enemies: list[EnemyState] = []
+        for spawn_enemy in spec.enemy_spawns:
+            enemy_type = enemy_types[spawn_enemy.type]
+            enemies.append(
+                EnemyState(
+                    type_id=enemy_type.id,
+                    x=spawn_enemy.x,
+                    y=spawn_enemy.y,
+                    health=enemy_type.health,
+                    alive=True,
+                )
+            )
+        return world, player, enemies, campaign_level.title
+
+    world, player, enemies, level_title = load_level_state(level_idx)
+
     running = True
     frames = 0
-
     while running:
         dt = min(clock.tick(60) / 1000.0, 0.05)
         frames += 1
         fire_requested = False
+        next_level_requested = False
 
         for event in pygame.event.get():
             if event.type == pygame.QUIT:
@@ -98,6 +130,8 @@ def run_runtime(smoke_test: bool = False) -> None:
                     world.toggle_door_in_front(player)
                 elif event.key == pygame.K_f:
                     fire_requested = True
+                elif event.key == pygame.K_RETURN:
+                    next_level_requested = True
             elif event.type == pygame.MOUSEBUTTONDOWN and event.button == 1:
                 fire_requested = True
 
@@ -117,10 +151,16 @@ def run_runtime(smoke_test: bool = False) -> None:
         world.move_player(player, forward, strafe, dt)
 
         if fire_requested:
-            fire = attempt_fire(shot_cooldown, player, world, enemy)
+            fire, _target = attempt_fire_multi(shot_cooldown, player, world, enemies)
             shot_cooldown = fire.next_cooldown
             _ = route_simulation_audio_events(False, fire)
         shot_cooldown = max(0.0, shot_cooldown - dt)
+
+        level_cleared = all(not e.alive for e in enemies)
+        if level_cleared and next_level_requested and level_idx < len(campaign) - 1:
+            level_idx += 1
+            world, player, enemies, level_title = load_level_state(level_idx)
+            shot_cooldown = 0.0
 
         surface.fill((35, 35, 40))
         pygame.draw.rect(surface, (70, 78, 102), (0, internal_h // 2, internal_w, internal_h // 2))
@@ -143,12 +183,16 @@ def run_runtime(smoke_test: bool = False) -> None:
             top = (internal_h - wall_h) // 2
             pygame.draw.line(surface, color, (col, top), (col, top + wall_h))
 
-        render_enemy(surface, enemy, player, fov, depth_buffer)
+        render_enemies(surface, enemies, player, fov, depth_buffer)
 
-        snapshot = build_frame_snapshot(player, enemy, world, shot_cooldown)
-        for i, line in enumerate(format_hud_lines(snapshot)):
-            hud_surface = font.render(line, True, (220, 220, 225))
-            surface.blit(hud_surface, (6, internal_h - 26 + i * 10))
+        snapshot = build_frame_snapshot(player, enemies, world, shot_cooldown)
+        hud_lines = [f"Level {level_idx + 1}/{len(campaign)}: {level_title}"] + format_hud_lines(snapshot)
+        if level_cleared:
+            hud_lines.append("Level clear! Press ENTER for next level")
+        for i, line in enumerate(hud_lines):
+            color = (245, 210, 120) if "Level clear" in line else (220, 220, 225)
+            hud_surface = font.render(line, True, color)
+            surface.blit(hud_surface, (6, internal_h - 36 + i * 10))
 
         cx, cy = internal_w // 2, internal_h // 2
         crosshair_color = (245, 190, 75) if snapshot.door_in_front else (245, 245, 245)
@@ -158,7 +202,7 @@ def run_runtime(smoke_test: bool = False) -> None:
         if show_minimap:
             scale = 8
             pad = 6
-            for y, row in enumerate(DEFAULT_MAP):
+            for y, row in enumerate(world.tile_map):
                 for x, tile in enumerate(row):
                     if tile == "1":
                         c = (55, 55, 60)

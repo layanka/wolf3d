@@ -4,9 +4,9 @@ from pathlib import Path
 
 from src.wolf3d.audio.manager import route_simulation_audio_events
 from src.wolf3d.entrypoint import bootstrap
-from src.wolf3d.content_loader import load_enemy_types, load_level_specs, load_weapon_types
+from src.wolf3d.content_loader import load_enemy_types, load_level_map, load_level_specs, load_weapon_types
 from src.wolf3d.entities.models import EnemyState, PlayerState
-from src.wolf3d.gameplay.combat import attempt_fire
+from src.wolf3d.gameplay.combat import attempt_fire_multi
 from src.wolf3d.gameplay_state import summarize_level_gameplay
 from src.wolf3d.render.frame import build_frame_snapshot
 from src.wolf3d.ui.hud import format_hud_lines
@@ -33,31 +33,21 @@ def main() -> None:
         f"weapons={list(gameplay.weapon_pickups_present)} threat={gameplay.estimated_threat_score}"
     )
 
-    # Lane B/C integration smoke: world simulation + combat attempt.
-    map_stub = [
-        "111111111111",
-        "100000000001",
-        "101111011101",
-        "100002000001",
-        "101101111101",
-        "100100000001",
-        "101101011101",
-        "100001000001",
-        "101111011101",
-        "100000000001",
-        "111111111111",
-    ]
-    world_sim = WorldSimulation(map_stub)
+    # Lane B/C/A/D integration smoke: world simulation + combat + HUD/audio route.
+    tile_map = load_level_map(data_root, first_level)
+    world_sim = WorldSimulation(tile_map)
     player = PlayerState(x=world.spawn_x, y=world.spawn_y, angle=world.spawn_angle)
-    first_enemy_spec = first_level.enemy_spawns[0]
-    first_enemy_type = {e.id: e for e in enemies}[first_enemy_spec.type]
-    enemy = EnemyState(type_id=first_enemy_type.id, x=first_enemy_spec.x, y=first_enemy_spec.y, health=first_enemy_type.health)
+    enemy_defs = {e.id: e for e in enemies}
+    enemy_states = [
+        EnemyState(type_id=spawn.type, x=spawn.x, y=spawn.y, health=enemy_defs[spawn.type].health)
+        for spawn in first_level.enemy_spawns
+    ]
 
     door_toggled = world_sim.toggle_door_in_front(player)
     world_sim.update_doors(player, 0.016)
-    fire = attempt_fire(0.0, player, world_sim, enemy)
+    fire, _target = attempt_fire_multi(0.0, player, world_sim, enemy_states)
     audio_events = route_simulation_audio_events(door_toggled, fire)
-    frame = build_frame_snapshot(player, enemy, world_sim, fire.next_cooldown)
+    frame = build_frame_snapshot(player, enemy_states, world_sim, fire.next_cooldown)
     hud_lines = format_hud_lines(frame)
     print(f"World sim smoke: door_toggled={door_toggled} first_door_open_amount={next(iter(world_sim.doors.values())).open_amount:.2f}")
     print(f"Combat smoke: fired={fire.fired} hit_enemy={fire.hit_enemy} enemy_down={fire.enemy_down} impact={fire.impact_distance:.2f}")

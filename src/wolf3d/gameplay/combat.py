@@ -53,3 +53,33 @@ def attempt_fire(cooldown_timer: float, player: PlayerState, world: WorldSimulat
 
     enemy_down = alive_before and not enemy.alive
     return FireResult(True, hit_enemy, enemy_down, impact_distance, WEAPON_COOLDOWN)
+
+
+def attempt_fire_multi(
+    cooldown_timer: float, player: PlayerState, world: WorldSimulation, enemies: list[EnemyState]
+) -> tuple[FireResult, EnemyState | None]:
+    if cooldown_timer > 0.0:
+        return FireResult(False, False, False, 0.0, cooldown_timer), None
+
+    ray_hit = world.cast_ray(player.x, player.y, player.angle)
+    impact_distance = ray_hit.depth
+    target: EnemyState | None = None
+    target_dist = float("inf")
+
+    for enemy in enemies:
+        enemy_distance = compute_enemy_shot_distance(player, enemy, ray_hit.depth)
+        if enemy_distance is not None and enemy_distance < target_dist:
+            target = enemy
+            target_dist = enemy_distance
+
+    hit_enemy = target is not None
+    enemy_down = False
+    if target is not None:
+        alive_before = target.alive
+        target.health -= 1
+        if target.health <= 0:
+            target.alive = False
+        enemy_down = alive_before and not target.alive
+        impact_distance = min(impact_distance, target_dist)
+
+    return FireResult(True, hit_enemy, enemy_down, impact_distance, WEAPON_COOLDOWN), target

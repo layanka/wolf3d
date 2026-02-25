@@ -44,6 +44,8 @@ Runtime shell data sources:
 - `F` or left mouse click: shoot
 - `X`: interact with mission objectives (extraction, consoles, beacon)
 - `C`: save a manual checkpoint (runtime shell)
+- `F5`: quick-save checkpoint
+- `F9`: quick-load checkpoint
 - `P`: pause/resume gameplay
 - `1/2/3/4`: switch weapon archetype (`pistol` / `smg` / `shotgun` / `autorifle`)
 - `M`: toggle minimap

@@ -332,6 +332,7 @@ def draw_help_overlay(surface: pygame.Surface, font: pygame.font.Font) -> None:
         "X: objective interaction",
         "1/2/3/4: weapon select",
         "C: save checkpoint",
+        "F5/F9: quick save/load",
         "R: restore/retry on death",
         "M: minimap toggle",
         "Z: minimap zoom",
@@ -558,6 +559,7 @@ def run_runtime(smoke_test: bool = False, data_root: Path | None = None) -> None
     heal_flash_timer = 0.0
     checkpoint: RunCheckpoint | None = None
     checkpoint_notice_timer = 0.0
+    checkpoint_notice_text = ""
     show_help = False
     paused = False
     mouse_look = False
@@ -606,6 +608,52 @@ def run_runtime(smoke_test: bool = False, data_root: Path | None = None) -> None
 
     world, player, enemies, pickups, ammo_pickups, health_pickups, level_title, level_win_condition = load_level_state(level_idx)
 
+    def restore_checkpoint_state() -> bool:
+        nonlocal level_idx
+        nonlocal world, player, enemies, pickups, ammo_pickups, health_pickups
+        nonlocal objective_state, active_projectiles, shot_cooldown, current_weapon_idx
+        nonlocal unlocked_weapons, ammo_counts, campaign_elapsed, level_elapsed
+        nonlocal shots_fired, shots_hit, kills_total, level_kills, level_title
+        nonlocal difficulty, stamina, show_briefing, player_dead, campaign_complete
+        nonlocal dry_fire_timer, heal_flash_timer, paused
+        nonlocal checkpoint_notice_timer, checkpoint_notice_text
+
+        if checkpoint is None:
+            return False
+
+        level_idx = checkpoint.level_idx
+        world = deepcopy(checkpoint.world)
+        player = deepcopy(checkpoint.player)
+        enemies = deepcopy(checkpoint.enemies)
+        pickups = deepcopy(checkpoint.pickups)
+        ammo_pickups = deepcopy(checkpoint.ammo_pickups)
+        health_pickups = deepcopy(checkpoint.health_pickups)
+        objective_state = deepcopy(checkpoint.objective_state)
+        active_projectiles = deepcopy(checkpoint.active_projectiles)
+        shot_cooldown = checkpoint.shot_cooldown
+        current_weapon_idx = checkpoint.current_weapon_idx
+        unlocked_weapons = set(checkpoint.unlocked_weapons)
+        ammo_counts = dict(checkpoint.ammo_counts)
+        campaign_elapsed = checkpoint.campaign_elapsed
+        level_elapsed = checkpoint.level_elapsed
+        shots_fired = checkpoint.shots_fired
+        shots_hit = checkpoint.shots_hit
+        kills_total = checkpoint.kills_total
+        level_kills = checkpoint.level_kills
+        level_title = checkpoint.level_title
+        difficulty = DIFFICULTY_PROFILES.get(checkpoint.difficulty_id, DIFFICULTY_PROFILES["normal"])
+        stamina = checkpoint.stamina
+
+        show_briefing = False
+        player_dead = False
+        campaign_complete = False
+        dry_fire_timer = 0.0
+        heal_flash_timer = 0.0
+        paused = False
+        checkpoint_notice_text = "Checkpoint restored"
+        checkpoint_notice_timer = 1.0
+        return True
+
     running = True
     frames = 0
     while running:
@@ -644,6 +692,10 @@ def run_runtime(smoke_test: bool = False, data_root: Path | None = None) -> None
                     interact_requested = True
                 elif event.key == pygame.K_c:
                     checkpoint_requested = True
+                elif event.key == pygame.K_F5:
+                    checkpoint_requested = True
+                elif event.key == pygame.K_F9:
+                    _ = restore_checkpoint_state()
                 elif event.key == pygame.K_RETURN:
                     if show_briefing:
                         show_briefing = False
@@ -662,30 +714,8 @@ def run_runtime(smoke_test: bool = False, data_root: Path | None = None) -> None
                 elif event.key == pygame.K_RIGHTBRACKET:
                     weapon_cycle_step = 1
                 elif event.key == pygame.K_r and player_dead:
-                    if checkpoint is not None and checkpoint.level_idx == level_idx:
-                        world = deepcopy(checkpoint.world)
-                        player = deepcopy(checkpoint.player)
-                        enemies = deepcopy(checkpoint.enemies)
-                        pickups = deepcopy(checkpoint.pickups)
-                        ammo_pickups = deepcopy(checkpoint.ammo_pickups)
-                        health_pickups = deepcopy(checkpoint.health_pickups)
-                        objective_state = deepcopy(checkpoint.objective_state)
-                        active_projectiles = deepcopy(checkpoint.active_projectiles)
-                        shot_cooldown = checkpoint.shot_cooldown
-                        current_weapon_idx = checkpoint.current_weapon_idx
-                        unlocked_weapons = set(checkpoint.unlocked_weapons)
-                        ammo_counts = dict(checkpoint.ammo_counts)
-                        campaign_elapsed = checkpoint.campaign_elapsed
-                        level_elapsed = checkpoint.level_elapsed
-                        shots_fired = checkpoint.shots_fired
-                        shots_hit = checkpoint.shots_hit
-                        kills_total = checkpoint.kills_total
-                        level_kills = checkpoint.level_kills
-                        level_title = checkpoint.level_title
-                        difficulty = DIFFICULTY_PROFILES.get(checkpoint.difficulty_id, DIFFICULTY_PROFILES["normal"])
-                        stamina = checkpoint.stamina
-                        show_briefing = False
-                    else:
+                    restored = restore_checkpoint_state() if checkpoint is not None and checkpoint.level_idx == level_idx else False
+                    if not restored:
                         world, player, enemies, pickups, ammo_pickups, health_pickups, level_title, level_win_condition = load_level_state(level_idx)
                         shot_cooldown = 0.0
                         current_weapon_idx = 0
@@ -861,6 +891,7 @@ def run_runtime(smoke_test: bool = False, data_root: Path | None = None) -> None
                 difficulty_id=difficulty.id,
                 stamina=stamina,
             )
+            checkpoint_notice_text = "Checkpoint saved"
             checkpoint_notice_timer = 1.0
 
         while weapon_cycle[current_weapon_idx] not in unlocked_weapons and current_weapon_idx > 0:
@@ -1018,7 +1049,7 @@ def run_runtime(smoke_test: bool = False, data_root: Path | None = None) -> None
         if heal_flash_timer > 0.0:
             hud_lines.append("Medkit used")
         if checkpoint_notice_timer > 0.0:
-            hud_lines.append("Checkpoint saved")
+            hud_lines.append(checkpoint_notice_text)
         nav_hint = objective_nav_hint(player, current_objective_target(objective_state, enemies))
         if nav_hint is not None:
             hud_lines.append(nav_hint)

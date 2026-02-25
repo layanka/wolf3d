@@ -38,6 +38,11 @@ SPRINT_RECOVER_UNLOCK = 22.0
 SPRINT_BLEND_IN_PER_SECOND = 7.0
 SPRINT_BLEND_OUT_PER_SECOND = 10.0
 STEP_INTERVAL_BASE = 0.35
+BASE_FOV_DEG = 60.0
+SPRINT_FOV_BOOST_DEG = 6.0
+HEAD_BOB_FREQ_BASE = 8.0
+HEAD_BOB_AMPLITUDE = 2.8
+IMPACT_KICK_PIXELS = 2.0
 
 
 @dataclass
@@ -239,6 +244,7 @@ def render_enemies(
     player: PlayerState,
     fov: float,
     depth_buffer: list[float],
+    view_center_y: int,
 ) -> None:
     w, h = surface.get_width(), surface.get_height()
     for enemy in enemies:
@@ -258,7 +264,7 @@ def render_enemies(
         screen_x = int((angle / fov + 0.5) * w)
         sprite_h = max(8, min(int(h / distance), h))
         sprite_w = max(4, sprite_h // 2)
-        top = (h - sprite_h) // 2
+        top = int(view_center_y - sprite_h // 2)
         bottom = top + sprite_h
         left = screen_x - sprite_w // 2
         right = left + sprite_w
@@ -276,6 +282,7 @@ def render_projectiles(
     projectiles: list[ProjectileState],
     fov: float,
     depth_buffer: list[float],
+    view_center_y: int,
 ) -> None:
     w, h = surface.get_width(), surface.get_height()
     for projectile in projectiles:
@@ -294,16 +301,16 @@ def render_projectiles(
             continue
 
         size = max(1, min(5, int(7 / (distance + 0.2))))
-        y = h // 2
+        y = view_center_y
         color = (250, 130, 70)
         pygame.draw.circle(surface, color, (screen_x, y), size)
 
 
-def draw_weapon_vfx(surface: pygame.Surface, weapon_id: str, timer: float) -> None:
+def draw_weapon_vfx(surface: pygame.Surface, weapon_id: str, timer: float, view_center_y: int) -> None:
     if timer <= 0.0:
         return
 
-    cx, cy = surface.get_width() // 2, surface.get_height() // 2
+    cx, cy = surface.get_width() // 2, view_center_y
     if weapon_id == "shotgun":
         color = (255, 185, 90)
         radius = 16
@@ -590,7 +597,7 @@ def run_runtime(smoke_test: bool = False, data_root: Path | None = None) -> None
     clock = pygame.time.Clock()
     pygame.display.set_caption("Wolf3D Real Runtime (Campaign Shell)")
 
-    fov = math.radians(60)
+    fov = math.radians(BASE_FOV_DEG)
     show_minimap = True
     minimap_scale_levels = (6, 8, 12)
     minimap_scale_idx = 1
@@ -629,6 +636,7 @@ def run_runtime(smoke_test: bool = False, data_root: Path | None = None) -> None
     sprint_exhausted = False
     sprint_blend = 0.0
     step_timer = 0.0
+    view_bob_phase = 0.0
 
     level_idx = 0
     objective_state = build_objective_state(campaign[level_idx].id)
@@ -679,7 +687,7 @@ def run_runtime(smoke_test: bool = False, data_root: Path | None = None) -> None
         nonlocal unlocked_weapons, ammo_counts, magazine_counts, campaign_elapsed, level_elapsed
         nonlocal shots_fired, shots_hit, kills_total, level_kills, level_title
         nonlocal difficulty, stamina, sprint_exhausted, sprint_blend, show_briefing, player_dead, campaign_complete
-        nonlocal dry_fire_timer, heal_flash_timer, paused, reload_timer, reload_weapon_id, step_timer
+        nonlocal dry_fire_timer, heal_flash_timer, paused, reload_timer, reload_weapon_id, step_timer, view_bob_phase
         nonlocal checkpoint_notice_timer, checkpoint_notice_text
 
         if checkpoint is None:
@@ -720,6 +728,7 @@ def run_runtime(smoke_test: bool = False, data_root: Path | None = None) -> None
         heal_flash_timer = 0.0
         paused = False
         step_timer = 0.0
+        view_bob_phase = 0.0
         checkpoint_notice_text = "Checkpoint restored"
         checkpoint_notice_timer = 1.0
         return True
@@ -799,6 +808,7 @@ def run_runtime(smoke_test: bool = False, data_root: Path | None = None) -> None
                         sprint_exhausted = False
                         sprint_blend = 0.0
                         step_timer = 0.0
+                        view_bob_phase = 0.0
                         reload_timer = 0.0
                         reload_weapon_id = None
                     player_dead = False
@@ -806,6 +816,7 @@ def run_runtime(smoke_test: bool = False, data_root: Path | None = None) -> None
                     dry_fire_timer = 0.0
                     heal_flash_timer = 0.0
                     step_timer = 0.0
+                    view_bob_phase = 0.0
                 elif event.key == pygame.K_r and not paused and not show_briefing and not player_dead and not campaign_complete:
                     reload_requested = True
                 elif event.key == pygame.K_n and campaign_complete:
@@ -835,6 +846,7 @@ def run_runtime(smoke_test: bool = False, data_root: Path | None = None) -> None
                     sprint_exhausted = False
                     sprint_blend = 0.0
                     step_timer = 0.0
+                    view_bob_phase = 0.0
                     checkpoint = None
                     checkpoint_notice_timer = 0.0
                 elif event.key == pygame.K_F1:
@@ -881,6 +893,7 @@ def run_runtime(smoke_test: bool = False, data_root: Path | None = None) -> None
         base_speed = player.move_speed
         speed_mult = 1.0 + (SPRINT_SPEED_MULT - 1.0) * sprint_blend
         player.move_speed = base_speed * speed_mult
+        fov = math.radians(BASE_FOV_DEG + SPRINT_FOV_BOOST_DEG * sprint_blend)
 
         player.angle += 0.0 if (player_dead or campaign_complete or paused) else turn * player.turn_speed * dt
         if simulation_active:
@@ -901,6 +914,10 @@ def run_runtime(smoke_test: bool = False, data_root: Path | None = None) -> None
                 audio.play_step()
                 step_interval = max(0.14, STEP_INTERVAL_BASE / max(1.0, speed_mult))
                 step_timer = step_interval
+            bob_freq = HEAD_BOB_FREQ_BASE + sprint_blend * 2.5
+            view_bob_phase = (view_bob_phase + dt * bob_freq * math.tau) % math.tau
+        else:
+            view_bob_phase = 0.0
         if stamina <= 0.01:
             sprint_exhausted = True
         melee_damage = 0
@@ -1110,6 +1127,7 @@ def run_runtime(smoke_test: bool = False, data_root: Path | None = None) -> None
                 sprint_exhausted = False
                 sprint_blend = 0.0
                 step_timer = 0.0
+                view_bob_phase = 0.0
                 reload_timer = 0.0
                 reload_weapon_id = None
                 checkpoint = None
@@ -1117,8 +1135,13 @@ def run_runtime(smoke_test: bool = False, data_root: Path | None = None) -> None
             else:
                 campaign_complete = True
 
+        bob_offset = math.sin(view_bob_phase) * HEAD_BOB_AMPLITUDE if simulation_active and moving else 0.0
+        impact_offset = -IMPACT_KICK_PIXELS * (damage_flash_timer / 0.17) if damage_flash_timer > 0.0 else 0.0
+        view_center_y = int((internal_h // 2) + bob_offset + impact_offset)
+        view_center_y = max(24, min(internal_h - 24, view_center_y))
+
         surface.fill((35, 35, 40))
-        pygame.draw.rect(surface, (70, 78, 102), (0, internal_h // 2, internal_w, internal_h // 2))
+        pygame.draw.rect(surface, (70, 78, 102), (0, view_center_y, internal_w, internal_h - view_center_y))
         depth_buffer = [20.0] * internal_w
 
         for col in range(internal_w):
@@ -1135,11 +1158,11 @@ def run_runtime(smoke_test: bool = False, data_root: Path | None = None) -> None
                 color = (max(20, intensity // 2), max(15, intensity // 3), 10)
             else:
                 color = (intensity // 2, intensity // 2, intensity)
-            top = (internal_h - wall_h) // 2
+            top = int(view_center_y - wall_h // 2)
             pygame.draw.line(surface, color, (col, top), (col, top + wall_h))
 
-        render_enemies(surface, enemies, player, fov, depth_buffer)
-        render_projectiles(surface, player, active_projectiles, fov, depth_buffer)
+        render_enemies(surface, enemies, player, fov, depth_buffer, view_center_y)
+        render_projectiles(surface, player, active_projectiles, fov, depth_buffer, view_center_y)
 
         snapshot = build_frame_snapshot(player, enemies, world, shot_cooldown, active_weapon.label)
         hud_lines = [f"Level {level_idx + 1}/{len(campaign)}: {level_title}"] + format_hud_lines(snapshot)
@@ -1215,7 +1238,7 @@ def run_runtime(smoke_test: bool = False, data_root: Path | None = None) -> None
             hud_surface = font.render(line, True, color)
             surface.blit(hud_surface, (6, internal_h - 36 + i * 10))
 
-        cx, cy = internal_w // 2, internal_h // 2
+        cx, cy = internal_w // 2, view_center_y
         if target_enemy is not None:
             crosshair_color = (245, 90, 90)
         elif snapshot.door_in_front:
@@ -1224,7 +1247,7 @@ def run_runtime(smoke_test: bool = False, data_root: Path | None = None) -> None
             crosshair_color = (245, 245, 245)
         pygame.draw.line(surface, crosshair_color, (cx - 4, cy), (cx + 4, cy), 1)
         pygame.draw.line(surface, crosshair_color, (cx, cy - 4), (cx, cy + 4), 1)
-        draw_weapon_vfx(surface, weapon_fx_id, weapon_fx_timer)
+        draw_weapon_vfx(surface, weapon_fx_id, weapon_fx_timer, view_center_y)
 
         if show_minimap:
             scale = minimap_scale_levels[minimap_scale_idx]

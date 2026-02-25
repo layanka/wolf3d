@@ -68,6 +68,9 @@ OBJECTIVE_ARROW_Y = 16
 OBJECTIVE_ARROW_SIZE = 6
 NEAR_MISS_TIMER_SECONDS = 0.22
 DAMAGE_DIR_TIMER_SECONDS = 0.4
+SHOTGUN_SLUG_DAMAGE = 38
+SHOTGUN_SLUG_RANGE_BONUS = 4.0
+SHOTGUN_SLUG_COOLDOWN_MULT = 1.28
 
 
 @dataclass
@@ -389,6 +392,7 @@ def draw_help_overlay(surface: pygame.Surface, font: pygame.font.Font) -> None:
         "9 / 0: audio volume -/+",
         "F10: mute/unmute audio",
         "F or Left Click: fire",
+        "G or Right Click: alt fire (shotgun slug)",
         "Mouse Wheel / [ ]: cycle weapons",
         "Space: door interaction",
         "X: objective interaction",
@@ -1023,6 +1027,7 @@ def run_runtime(smoke_test: bool = False, data_root: Path | None = None, quicklo
         dt = min(clock.tick(60) / 1000.0, 0.05)
         frames += 1
         fire_requested = False
+        alt_fire_requested = False
         next_level_requested = False
         interact_requested = False
         checkpoint_requested = False
@@ -1091,6 +1096,8 @@ def run_runtime(smoke_test: bool = False, data_root: Path | None = None, quicklo
                             audio.play("door")
                 elif event.key == pygame.K_f:
                     fire_requested = True
+                elif event.key == pygame.K_g:
+                    alt_fire_requested = True
                 elif event.key == pygame.K_x:
                     interact_requested = True
                 elif event.key == pygame.K_c:
@@ -1226,6 +1233,8 @@ def run_runtime(smoke_test: bool = False, data_root: Path | None = None, quicklo
                     settings_notice_timer = 1.0
             elif event.type == pygame.MOUSEBUTTONDOWN and event.button == 1:
                 fire_requested = True
+            elif event.type == pygame.MOUSEBUTTONDOWN and event.button == 3:
+                alt_fire_requested = True
             elif event.type == pygame.MOUSEWHEEL:
                 if event.y > 0:
                     weapon_cycle_step = 1
@@ -1458,7 +1467,8 @@ def run_runtime(smoke_test: bool = False, data_root: Path | None = None, quicklo
         ):
             reload_timer = active_weapon.reload_time
             reload_weapon_id = active_weapon.id
-        if fire_requested and simulation_active:
+        trigger_requested = fire_requested or (alt_fire_requested and active_weapon.id == "shotgun")
+        if trigger_requested and simulation_active:
             if reload_timer > 0.0:
                 pass
             else:
@@ -1467,11 +1477,18 @@ def run_runtime(smoke_test: bool = False, data_root: Path | None = None, quicklo
                     reload_weapon_id = active_weapon.id
                 elif not can_fire:
                     dry_fire_timer = 0.15
+                use_shotgun_slug = alt_fire_requested and active_weapon.id == "shotgun"
                 ray_offsets: tuple[float, ...] = (0.0,)
-                per_pellet_damage = active_weapon.damage
-                if active_weapon.id == "shotgun":
+                shot_damage = active_weapon.damage
+                shot_range = active_weapon.range
+                shot_delay = active_weapon.cooldown
+                if use_shotgun_slug:
+                    shot_damage = SHOTGUN_SLUG_DAMAGE
+                    shot_range = active_weapon.range + SHOTGUN_SLUG_RANGE_BONUS
+                    shot_delay = active_weapon.cooldown * SHOTGUN_SLUG_COOLDOWN_MULT
+                elif active_weapon.id == "shotgun":
                     ray_offsets = (-0.08, -0.04, 0.0, 0.04, 0.08)
-                    per_pellet_damage = max(1, active_weapon.damage // 3)
+                    shot_damage = max(1, active_weapon.damage // 3)
                 else:
                     dynamic_spread = recoil_bloom
                     if moving:
@@ -1487,9 +1504,9 @@ def run_runtime(smoke_test: bool = False, data_root: Path | None = None, quicklo
                         player,
                         world,
                         enemies,
-                        damage=per_pellet_damage,
-                        max_range=active_weapon.range,
-                        cooldown=active_weapon.cooldown,
+                        damage=shot_damage,
+                        max_range=shot_range,
+                        cooldown=shot_delay,
                         ray_offsets=ray_offsets,
                     )
                     shot_cooldown = fire.next_cooldown
@@ -1507,6 +1524,8 @@ def run_runtime(smoke_test: bool = False, data_root: Path | None = None, quicklo
                     weapon_fx_id = active_weapon.id
                     if active_weapon.id == "smg":
                         weapon_fx_timer = 0.045
+                    elif active_weapon.id == "shotgun" and use_shotgun_slug:
+                        weapon_fx_timer = 0.085
                     elif active_weapon.id == "shotgun":
                         weapon_fx_timer = 0.11
                     elif active_weapon.id == "autorifle":
@@ -1664,6 +1683,8 @@ def run_runtime(smoke_test: bool = False, data_root: Path | None = None, quicklo
         active_mag = magazine_counts.get(active_weapon.id, 0)
         active_reserve = ammo_counts.get(ammo_type, 0)
         hud_lines.append(f"Ammo ({ammo_type}): {active_mag}/{active_weapon.magazine_size} | reserve {active_reserve}")
+        if active_weapon.id == "shotgun":
+            hud_lines.append("Alt fire: G / Right Click (slug)")
         hud_lines.append(
             f"Reserves L/S/R: {ammo_counts.get('light', 0)}/{ammo_counts.get('shell', 0)}/{ammo_counts.get('rifle', 0)}"
         )

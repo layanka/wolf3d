@@ -67,9 +67,9 @@ Living feature backlog for the full game (post-PoC), with sprint IDs, status, or
 ### Planned: Weapons and Items
 - `FS-017` `done`: Weapon personality pass (per-weapon recoil curves, reload interrupt policy, swap timings).
   - Accept: each weapon has unique handling profile without balance breaks.
-- `FS-018` `next`: Secondary fire prototype for one weapon.
+- `FS-018` `done`: Secondary fire prototype for one weapon.
   - Accept: alternate mode implemented, documented, and balanced enough for playtest.
-- `FS-019` `planned`: Pickup economy pass (ammo/medkit drop tuning by difficulty + level).
+- `FS-019` `next`: Pickup economy pass (ammo/medkit drop tuning by difficulty + level).
   - Accept: resource flow avoids starvation and trivial abundance.
 
 ### Planned: Level and Content Pipeline

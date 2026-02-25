@@ -47,6 +47,7 @@ Runtime shell data sources:
 - `Mouse wheel` or `[` `]`: cycle through unlocked weapons
 - `Space`: open/close door in front of you
 - `F` or left mouse click: shoot
+- `G` or right mouse click: alt-fire shotgun slug (single-shell precision shot)
 - `X`: interact with mission objectives (extraction, consoles, beacon)
 - `C`: save a manual checkpoint (runtime shell)
 - `F5`: quick-save checkpoint
@@ -120,6 +121,7 @@ Expected visuals:
 - Weapon handling now differs by archetype (swap timing, recoil curve, spread multipliers, reload interrupt policy)
 - Crosshair now turns red when an enemy is in direct line of fire
 - HUD/briefing now display each level's campaign goal text (`win_condition`)
+- Shotgun now supports alt-fire slug mode with higher precision/range and slower cadence
 
 Audio source and license notes:
 - [assets/audio/CREDITS.md](/Users/philippe.lefebvre2/Code/testing1/assets/audio/CREDITS.md)

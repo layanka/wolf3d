@@ -2033,8 +2033,8 @@ def run_runtime(smoke_test: bool = False, data_root: Path | None = None, quicklo
             hud_lines.append(objective_interact_hint(objective_hint_node, objective_state, enemies))
         if show_briefing or not show_hud:
             hud_lines = []
-        hud_line_height = 8
-        max_hud_lines = max(6, (internal_h - 8) // hud_line_height)
+        hud_line_height = max(10, font.get_linesize() + 1)
+        max_hud_lines = max(5, (internal_h - 8) // hud_line_height)
         if len(hud_lines) > max_hud_lines:
             hud_lines = [hud_lines[0]] + hud_lines[-(max_hud_lines - 1) :]
         for i, line in enumerate(hud_lines):

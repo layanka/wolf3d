@@ -276,6 +276,7 @@ def draw_help_overlay(surface: pygame.Surface, font: pygame.font.Font) -> None:
         "Controls",
         "WASD / Arrows: move and strafe",
         "Q/E or Left/Right: turn",
+        "TAB: toggle mouse-look",
         "F or Left Click: fire",
         "Space: door interaction",
         "X: objective interaction",
@@ -469,6 +470,8 @@ def run_runtime(smoke_test: bool = False, data_root: Path | None = None) -> None
     checkpoint_notice_timer = 0.0
     show_help = False
     paused = False
+    mouse_look = False
+    mouse_sensitivity = 0.0028
 
     level_idx = 0
     objective_state = build_objective_state(campaign[level_idx].id)
@@ -533,6 +536,10 @@ def run_runtime(smoke_test: bool = False, data_root: Path | None = None) -> None
                     show_help = not show_help
                 elif event.key == pygame.K_p:
                     paused = not paused
+                elif event.key == pygame.K_TAB:
+                    mouse_look = not mouse_look
+                    pygame.event.set_grab(mouse_look)
+                    pygame.mouse.set_visible(not mouse_look)
                 elif event.key == pygame.K_SPACE:
                     if not paused and not show_briefing and not player_dead and not campaign_complete:
                         world.toggle_door_in_front(player)
@@ -620,6 +627,8 @@ def run_runtime(smoke_test: bool = False, data_root: Path | None = None) -> None
                     difficulty = DIFFICULTY_PROFILES["hard"]
             elif event.type == pygame.MOUSEBUTTONDOWN and event.button == 1:
                 fire_requested = True
+            elif event.type == pygame.MOUSEMOTION and mouse_look and not paused and not player_dead and not campaign_complete:
+                player.angle += event.rel[0] * mouse_sensitivity
 
         keys = pygame.key.get_pressed()
         forward = (float(keys[pygame.K_w]) - float(keys[pygame.K_s])) + (
@@ -843,6 +852,8 @@ def run_runtime(smoke_test: bool = False, data_root: Path | None = None) -> None
             hud_lines.append("Paused: press P to resume")
         if show_help:
             hud_lines.append("Help open: press H to close")
+        if mouse_look:
+            hud_lines.append("Mouse-look: TAB to release")
         if player_dead:
             if checkpoint is not None and checkpoint.level_idx == level_idx:
                 hud_lines.append("You were eliminated: press R to restore checkpoint")
@@ -991,4 +1002,6 @@ def run_runtime(smoke_test: bool = False, data_root: Path | None = None) -> None
         if smoke_test and frames >= 5:
             running = False
 
+    pygame.event.set_grab(False)
+    pygame.mouse.set_visible(True)
     pygame.quit()

@@ -146,3 +146,9 @@ Audio source and license notes:
 UV_CACHE_DIR=.uv-cache uv run python poc_game.py --smoke-test
 UV_CACHE_DIR=.uv-cache uv run python -m src.wolf3d.runtime_entry --smoke-test
 ```
+
+### Tests
+
+```bash
+UV_CACHE_DIR=.uv-cache uv run pytest -q
+```

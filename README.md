@@ -82,6 +82,11 @@ Door behavior:
 - Closed doors require explicit `Space` interaction to open.
 - Closed doors fully block visibility and shots.
 
+Quick test for shotgun vs slug:
+- Play until `level_02` and pick up the shotgun.
+- `F` / left-click fires pellet spread (close-range burst).
+- `G` / right-click fires slug (single stronger long-range shot, slower cadence).
+
 Expected visuals:
 - Blue-gray floor/ceiling bands
 - Vertical wall slices with depth shading

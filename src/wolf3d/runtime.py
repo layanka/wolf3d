@@ -988,6 +988,7 @@ def run_runtime(smoke_test: bool = False, data_root: Path | None = None) -> None
             checkpoint_notice_text = "Checkpoint saved"
             checkpoint_notice_timer = 1.0
 
+        prev_weapon_idx = current_weapon_idx
         while weapon_cycle[current_weapon_idx] not in unlocked_weapons and current_weapon_idx > 0:
             current_weapon_idx -= 1
         if weapon_cycle_step != 0:
@@ -995,6 +996,11 @@ def run_runtime(smoke_test: bool = False, data_root: Path | None = None) -> None
         current_weapon_idx = choose_fallback_weapon(
             current_weapon_idx, weapon_cycle, unlocked_weapons, weapons_by_id, ammo_counts, magazine_counts
         )
+        if reload_timer > 0.0 and prev_weapon_idx != current_weapon_idx:
+            selected_weapon_id = weapon_cycle[current_weapon_idx]
+            if reload_weapon_id is not None and selected_weapon_id != reload_weapon_id:
+                reload_timer = 0.0
+                reload_weapon_id = None
 
         active_weapon = weapons_by_id[weapon_cycle[current_weapon_idx]]
         target_enemy = enemy_in_sights(player, enemies, world, active_weapon.range)
@@ -1015,7 +1021,10 @@ def run_runtime(smoke_test: bool = False, data_root: Path | None = None) -> None
             if reload_timer > 0.0:
                 pass
             else:
-                if not can_fire:
+                if not can_fire and magazine_ammo <= 0 and reserve_ammo > 0:
+                    reload_timer = active_weapon.reload_time
+                    reload_weapon_id = active_weapon.id
+                elif not can_fire:
                     dry_fire_timer = 0.15
                 ray_offsets: tuple[float, ...] = (0.0,)
                 per_pellet_damage = active_weapon.damage

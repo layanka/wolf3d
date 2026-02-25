@@ -88,6 +88,7 @@ Expected visuals:
 - HUD/runtime now tracks level+campaign time, kills, and shooting accuracy
 - Weapons now consume ammo by ammo type, with pickup and between-level ammo gains
 - Weapons now use per-weapon magazines with timed reloads from shared reserves
+- Triggering fire on an empty magazine now auto-starts reload if reserve ammo is available
 - Defeated enemies drop ammo packs (shown as cyan dots on minimap)
 - Defeated enemies also drop medkits (shown as green dots on minimap)
 - Runtime auto-switches to another unlocked weapon when current ammo is empty

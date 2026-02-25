@@ -9,5 +9,16 @@
   ],
   "weapon_pickups": [
     {"type": "smg", "x": 5.5, "y": 2.5}
+  ],
+  "scripted_events": [
+    {
+      "id": "hall_ambush",
+      "trigger": {"x": 5.5, "y": 3.5, "radius": 1.0},
+      "announcement": "Ambush incoming",
+      "enemy_spawns": [
+        {"type": "guard", "x": 11.5, "y": 3.5},
+        {"type": "hound", "x": 10.5, "y": 5.5}
+      ]
+    }
   ]
 }

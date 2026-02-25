@@ -123,6 +123,7 @@ Expected visuals:
 - HUD/briefing now display each level's campaign goal text (`win_condition`)
 - Shotgun now supports alt-fire slug mode with higher precision/range and slower cadence
 - Enemy loot economy now scales by difficulty and level, with chance-based ammo/medkit drops
+- Levels now support scripted trigger encounters (announcement + reinforcement spawns)
 
 Audio source and license notes:
 - [assets/audio/CREDITS.md](/Users/philippe.lefebvre2/Code/testing1/assets/audio/CREDITS.md)

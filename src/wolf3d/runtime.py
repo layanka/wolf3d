@@ -15,6 +15,7 @@ import pygame
 
 from src.wolf3d.audio.manager import route_simulation_audio_events
 from src.wolf3d.audio.runtime_audio import RuntimeAudioManager
+from src.wolf3d.contracts import ScriptedEvent
 from src.wolf3d.content_loader import (
     load_campaign,
     load_enemy_types,
@@ -130,6 +131,7 @@ class RunCheckpoint:
     stamina: float
     sprint_exhausted: bool
     sprint_blend: float
+    triggered_script_events: set[str]
 
 
 DIFFICULTY_PROFILES: dict[str, DifficultyProfile] = {
@@ -640,6 +642,7 @@ def build_checkpoint(
     stamina: float,
     sprint_exhausted: bool,
     sprint_blend: float,
+    triggered_script_events: set[str],
     ) -> RunCheckpoint:
     return RunCheckpoint(
         level_idx=level_idx,
@@ -671,6 +674,7 @@ def build_checkpoint(
         stamina=stamina,
         sprint_exhausted=sprint_exhausted,
         sprint_blend=sprint_blend,
+        triggered_script_events=set(triggered_script_events),
     )
 
 
@@ -913,6 +917,16 @@ def run_runtime(smoke_test: bool = False, data_root: Path | None = None, quicklo
     def handling_for(weapon_id: str) -> dict[str, float | bool]:
         return weapon_handling.get(weapon_id, default_weapon_handling)
 
+    def build_enemy_state(spawn_enemy: object) -> EnemyState:
+        enemy_type = enemy_types[spawn_enemy.type]
+        return EnemyState(
+            type_id=enemy_type.id,
+            x=spawn_enemy.x,
+            y=spawn_enemy.y,
+            health=enemy_type.health,
+            alive=True,
+        )
+
     settings_last_write_at = 0.0
     settings_pending = False
     settings_last_snapshot: tuple[float, bool, int, float, bool, bool, str] | None = None
@@ -958,6 +972,7 @@ def run_runtime(smoke_test: bool = False, data_root: Path | None = None, quicklo
         list[dict[str, float | str]],
         list[dict[str, float | str]],
         list[dict[str, float | str]],
+        list[ScriptedEvent],
         str,
         str,
     ]:
@@ -969,28 +984,33 @@ def run_runtime(smoke_test: bool = False, data_root: Path | None = None, quicklo
         player = PlayerState(x=float(spawn.get("x", 1.5)), y=float(spawn.get("y", 1.5)), angle=float(spawn.get("angle", 0.0)))
         enemies: list[EnemyState] = []
         for spawn_enemy in spec.enemy_spawns:
-            enemy_type = enemy_types[spawn_enemy.type]
-            enemies.append(
-                EnemyState(
-                    type_id=enemy_type.id,
-                    x=spawn_enemy.x,
-                    y=spawn_enemy.y,
-                    health=enemy_type.health,
-                    alive=True,
-                )
-            )
+            enemies.append(build_enemy_state(spawn_enemy))
         pickups: list[dict[str, float | str]] = []
         for pickup in spec.weapon_pickups:
             pickups.append({"type": str(pickup["type"]), "x": float(pickup["x"]), "y": float(pickup["y"])})
         ammo_pickups: list[dict[str, float | str]] = []
         health_pickups: list[dict[str, float | str]] = []
-        return world, player, enemies, pickups, ammo_pickups, health_pickups, campaign_level.title, campaign_level.win_condition
+        scripted_events = list(spec.scripted_events)
+        return (
+            world,
+            player,
+            enemies,
+            pickups,
+            ammo_pickups,
+            health_pickups,
+            scripted_events,
+            campaign_level.title,
+            campaign_level.win_condition,
+        )
 
-    world, player, enemies, pickups, ammo_pickups, health_pickups, level_title, level_win_condition = load_level_state(level_idx)
+    world, player, enemies, pickups, ammo_pickups, health_pickups, scripted_events, level_title, level_win_condition = load_level_state(level_idx)
+    triggered_script_events: set[str] = set()
+    script_notice_timer = 0.0
+    script_notice_text = ""
 
     def restore_checkpoint_state() -> bool:
         nonlocal level_idx
-        nonlocal world, player, enemies, pickups, ammo_pickups, health_pickups
+        nonlocal world, player, enemies, pickups, ammo_pickups, health_pickups, scripted_events, triggered_script_events
         nonlocal objective_state, active_projectiles, shot_cooldown, current_weapon_idx
         nonlocal pending_weapon_idx, weapon_swap_timer
         nonlocal unlocked_weapons, ammo_counts, magazine_counts, campaign_elapsed, level_elapsed
@@ -1000,6 +1020,7 @@ def run_runtime(smoke_test: bool = False, data_root: Path | None = None, quicklo
         nonlocal melee_hit_flash_timer, projectile_hit_flash_timer, near_miss_timer, near_miss_angle
         nonlocal damage_direction_timer, damage_direction_angle
         nonlocal checkpoint_notice_timer, checkpoint_notice_text, settings_notice_timer, settings_notice_text, kill_confirm_timer
+        nonlocal script_notice_timer, script_notice_text
 
         if checkpoint is None:
             return False
@@ -1011,6 +1032,8 @@ def run_runtime(smoke_test: bool = False, data_root: Path | None = None, quicklo
         pickups = deepcopy(checkpoint.pickups)
         ammo_pickups = deepcopy(checkpoint.ammo_pickups)
         health_pickups = deepcopy(checkpoint.health_pickups)
+        scripted_events = list(level_specs[campaign[level_idx].id].scripted_events)
+        triggered_script_events = set(getattr(checkpoint, "triggered_script_events", set()))
         objective_state = deepcopy(checkpoint.objective_state)
         active_projectiles = deepcopy(checkpoint.active_projectiles)
         shot_cooldown = checkpoint.shot_cooldown
@@ -1052,6 +1075,8 @@ def run_runtime(smoke_test: bool = False, data_root: Path | None = None, quicklo
         recoil_bloom = 0.0
         checkpoint_notice_text = "Checkpoint restored"
         checkpoint_notice_timer = 1.0
+        script_notice_timer = 0.0
+        script_notice_text = ""
         settings_notice_timer = 0.0
         settings_notice_text = ""
         return True
@@ -1190,7 +1215,20 @@ def run_runtime(smoke_test: bool = False, data_root: Path | None = None, quicklo
                 elif event.key == pygame.K_r and player_dead:
                     restored = restore_checkpoint_state() if checkpoint is not None and checkpoint.level_idx == level_idx else False
                     if not restored:
-                        world, player, enemies, pickups, ammo_pickups, health_pickups, level_title, level_win_condition = load_level_state(level_idx)
+                        (
+                            world,
+                            player,
+                            enemies,
+                            pickups,
+                            ammo_pickups,
+                            health_pickups,
+                            scripted_events,
+                            level_title,
+                            level_win_condition,
+                        ) = load_level_state(level_idx)
+                        triggered_script_events.clear()
+                        script_notice_timer = 0.0
+                        script_notice_text = ""
                         shot_cooldown = 0.0
                         current_weapon_idx = 0
                         pending_weapon_idx = None
@@ -1225,7 +1263,20 @@ def run_runtime(smoke_test: bool = False, data_root: Path | None = None, quicklo
                     reload_requested = True
                 elif event.key == pygame.K_n and campaign_complete:
                     level_idx = 0
-                    world, player, enemies, pickups, ammo_pickups, health_pickups, level_title, level_win_condition = load_level_state(level_idx)
+                    (
+                        world,
+                        player,
+                        enemies,
+                        pickups,
+                        ammo_pickups,
+                        health_pickups,
+                        scripted_events,
+                        level_title,
+                        level_win_condition,
+                    ) = load_level_state(level_idx)
+                    triggered_script_events.clear()
+                    script_notice_timer = 0.0
+                    script_notice_text = ""
                     shot_cooldown = 0.0
                     current_weapon_idx = 0
                     pending_weapon_idx = None
@@ -1345,6 +1396,20 @@ def run_runtime(smoke_test: bool = False, data_root: Path | None = None, quicklo
             view_bob_phase = 0.0
         if stamina <= 0.01:
             sprint_exhausted = True
+        if simulation_active:
+            for event in scripted_events:
+                if event.id in triggered_script_events:
+                    continue
+                trigger_dx = event.trigger_x - player.x
+                trigger_dy = event.trigger_y - player.y
+                if (trigger_dx * trigger_dx) + (trigger_dy * trigger_dy) > event.trigger_radius * event.trigger_radius:
+                    continue
+                triggered_script_events.add(event.id)
+                for spawn_enemy in event.enemy_spawns:
+                    enemies.append(build_enemy_state(spawn_enemy))
+                if event.announcement:
+                    script_notice_text = event.announcement
+                    script_notice_timer = 2.2
         melee_damage = 0
         spawned_projectiles: list[ProjectileState] = []
         if simulation_active:
@@ -1467,6 +1532,7 @@ def run_runtime(smoke_test: bool = False, data_root: Path | None = None, quicklo
                 stamina=stamina,
                 sprint_exhausted=sprint_exhausted,
                 sprint_blend=sprint_blend,
+                triggered_script_events=triggered_script_events,
             )
             if quicksave_requested:
                 disk_saved = save_checkpoint_to_disk(project_root, checkpoint)
@@ -1598,6 +1664,7 @@ def run_runtime(smoke_test: bool = False, data_root: Path | None = None, quicklo
         heal_flash_timer = max(0.0, heal_flash_timer - decay_dt)
         checkpoint_notice_timer = max(0.0, checkpoint_notice_timer - decay_dt)
         settings_notice_timer = max(0.0, settings_notice_timer - decay_dt)
+        script_notice_timer = max(0.0, script_notice_timer - decay_dt)
         persist_runtime_settings()
         was_reloading = reload_timer > 0.0
         reload_timer = max(0.0, reload_timer - decay_dt)
@@ -1608,7 +1675,20 @@ def run_runtime(smoke_test: bool = False, data_root: Path | None = None, quicklo
         if level_cleared and not player_dead and next_level_requested:
             if level_idx < len(campaign) - 1:
                 level_idx += 1
-                world, player, enemies, pickups, ammo_pickups, health_pickups, level_title, level_win_condition = load_level_state(level_idx)
+                (
+                    world,
+                    player,
+                    enemies,
+                    pickups,
+                    ammo_pickups,
+                    health_pickups,
+                    scripted_events,
+                    level_title,
+                    level_win_condition,
+                ) = load_level_state(level_idx)
+                triggered_script_events.clear()
+                script_notice_timer = 0.0
+                script_notice_text = ""
                 shot_cooldown = 0.0
                 current_weapon_idx = 0
                 pending_weapon_idx = None
@@ -1640,6 +1720,8 @@ def run_runtime(smoke_test: bool = False, data_root: Path | None = None, quicklo
                 recoil_bloom = 0.0
                 reload_timer = 0.0
                 reload_weapon_id = None
+                script_notice_timer = 0.0
+                script_notice_text = ""
                 checkpoint = None
                 checkpoint_notice_timer = 0.0
             else:
@@ -1758,6 +1840,8 @@ def run_runtime(smoke_test: bool = False, data_root: Path | None = None, quicklo
             hud_lines.append(checkpoint_notice_text)
         if settings_notice_timer > 0.0:
             hud_lines.append(settings_notice_text)
+        if script_notice_timer > 0.0:
+            hud_lines.append(script_notice_text)
         if show_perf_hud:
             alive_enemies = sum(1 for enemy in enemies if enemy.alive)
             open_doors = sum(1 for door in world.doors.values() if door.open_amount > 0.05)

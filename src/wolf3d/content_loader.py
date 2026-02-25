@@ -3,7 +3,7 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
-from .contracts import CampaignLevel, EnemyType, LevelSpawn, LevelSpec, WeaponType
+from .contracts import CampaignLevel, EnemyType, LevelSpawn, LevelSpec, ScriptedEvent, WeaponType
 
 
 def _read_json(path: Path) -> dict:
@@ -81,6 +81,21 @@ def load_level_specs(data_root: Path) -> list[LevelSpec]:
     for path in sorted(level_dir.glob("*.json")):
         raw = _read_json(path)
         enemy_spawns = [LevelSpawn(type=s["type"], x=float(s["x"]), y=float(s["y"])) for s in raw["enemy_spawns"]]
+        scripted_events = []
+        for event in raw.get("scripted_events", []):
+            scripted_enemy_spawns = [
+                LevelSpawn(type=s["type"], x=float(s["x"]), y=float(s["y"])) for s in event.get("enemy_spawns", [])
+            ]
+            scripted_events.append(
+                ScriptedEvent(
+                    id=str(event["id"]),
+                    trigger_x=float(event["trigger"]["x"]),
+                    trigger_y=float(event["trigger"]["y"]),
+                    trigger_radius=float(event["trigger"].get("radius", 0.9)),
+                    enemy_spawns=scripted_enemy_spawns,
+                    announcement=str(event.get("announcement")) if event.get("announcement") is not None else None,
+                )
+            )
         specs.append(
             LevelSpec(
                 id=raw["id"],
@@ -88,6 +103,7 @@ def load_level_specs(data_root: Path) -> list[LevelSpec]:
                 spawn=raw["spawn"],
                 enemy_spawns=enemy_spawns,
                 weapon_pickups=raw["weapon_pickups"],
+                scripted_events=scripted_events,
             )
         )
     return specs
@@ -108,6 +124,10 @@ def validate_cross_refs(campaign: list[CampaignLevel], levels: list[LevelSpec], 
         for spawn in level.enemy_spawns:
             if spawn.type not in enemy_ids:
                 raise ValueError(f"level {level.id} has unknown enemy type: {spawn.type}")
+        for event in level.scripted_events:
+            for spawn in event.enemy_spawns:
+                if spawn.type not in enemy_ids:
+                    raise ValueError(f"level {level.id} event {event.id} has unknown enemy type: {spawn.type}")
         for pickup in level.weapon_pickups:
             if pickup["type"] not in weapon_ids:
                 raise ValueError(f"level {level.id} has unknown weapon type: {pickup['type']}")

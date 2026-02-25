@@ -9,5 +9,16 @@
   ],
   "weapon_pickups": [
     {"type": "autorifle", "x": 4.5, "y": 4.5}
+  ],
+  "scripted_events": [
+    {
+      "id": "beacon_guardians",
+      "trigger": {"x": 8.5, "y": 5.5, "radius": 1.0},
+      "announcement": "Command reinforcements deployed",
+      "enemy_spawns": [
+        {"type": "assault", "x": 11.5, "y": 8.5},
+        {"type": "guard", "x": 6.5, "y": 8.5}
+      ]
+    }
   ]
 }

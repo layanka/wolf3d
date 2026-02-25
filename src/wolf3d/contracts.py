@@ -50,3 +50,14 @@ class LevelSpec:
     spawn: dict[str, Any]
     enemy_spawns: list[LevelSpawn]
     weapon_pickups: list[dict[str, Any]]
+    scripted_events: list["ScriptedEvent"]
+
+
+@dataclass(frozen=True)
+class ScriptedEvent:
+    id: str
+    trigger_x: float
+    trigger_y: float
+    trigger_radius: float
+    enemy_spawns: list[LevelSpawn]
+    announcement: str | None = None

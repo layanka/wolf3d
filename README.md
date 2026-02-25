@@ -96,6 +96,7 @@ Expected visuals:
 - Manual checkpoints can be restored on death from the same level
 - Sprint now ramps in/out smoothly and applies a short exhaustion lockout at zero stamina
 - Camera now adds subtle movement head-bob, sprint FOV kick, and light hit-impact kick
+- Non-shotgun weapons now lose accuracy while moving/sprinting and during sustained recoil bloom
 - HUD now provides objective direction and distance guidance
 - Crosshair now turns red when an enemy is in direct line of fire
 - HUD/briefing now display each level's campaign goal text (`win_condition`)

@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import math
 import os
+import random
 from copy import deepcopy
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -43,6 +44,10 @@ SPRINT_FOV_BOOST_DEG = 6.0
 HEAD_BOB_FREQ_BASE = 8.0
 HEAD_BOB_AMPLITUDE = 2.8
 IMPACT_KICK_PIXELS = 2.0
+RECOIL_BLOOM_DECAY_PER_SECOND = 0.95
+MOVE_SPREAD_RAD = 0.012
+SPRINT_SPREAD_RAD = 0.02
+RECOIL_SPREAD_MAX_RAD = 0.055
 
 
 @dataclass
@@ -637,6 +642,7 @@ def run_runtime(smoke_test: bool = False, data_root: Path | None = None) -> None
     sprint_blend = 0.0
     step_timer = 0.0
     view_bob_phase = 0.0
+    recoil_bloom = 0.0
 
     level_idx = 0
     objective_state = build_objective_state(campaign[level_idx].id)
@@ -687,7 +693,7 @@ def run_runtime(smoke_test: bool = False, data_root: Path | None = None) -> None
         nonlocal unlocked_weapons, ammo_counts, magazine_counts, campaign_elapsed, level_elapsed
         nonlocal shots_fired, shots_hit, kills_total, level_kills, level_title
         nonlocal difficulty, stamina, sprint_exhausted, sprint_blend, show_briefing, player_dead, campaign_complete
-        nonlocal dry_fire_timer, heal_flash_timer, paused, reload_timer, reload_weapon_id, step_timer, view_bob_phase
+        nonlocal dry_fire_timer, heal_flash_timer, paused, reload_timer, reload_weapon_id, step_timer, view_bob_phase, recoil_bloom
         nonlocal checkpoint_notice_timer, checkpoint_notice_text
 
         if checkpoint is None:
@@ -729,6 +735,7 @@ def run_runtime(smoke_test: bool = False, data_root: Path | None = None) -> None
         paused = False
         step_timer = 0.0
         view_bob_phase = 0.0
+        recoil_bloom = 0.0
         checkpoint_notice_text = "Checkpoint restored"
         checkpoint_notice_timer = 1.0
         return True
@@ -809,6 +816,7 @@ def run_runtime(smoke_test: bool = False, data_root: Path | None = None) -> None
                         sprint_blend = 0.0
                         step_timer = 0.0
                         view_bob_phase = 0.0
+                        recoil_bloom = 0.0
                         reload_timer = 0.0
                         reload_weapon_id = None
                     player_dead = False
@@ -817,6 +825,7 @@ def run_runtime(smoke_test: bool = False, data_root: Path | None = None) -> None
                     heal_flash_timer = 0.0
                     step_timer = 0.0
                     view_bob_phase = 0.0
+                    recoil_bloom = 0.0
                 elif event.key == pygame.K_r and not paused and not show_briefing and not player_dead and not campaign_complete:
                     reload_requested = True
                 elif event.key == pygame.K_n and campaign_complete:
@@ -847,6 +856,7 @@ def run_runtime(smoke_test: bool = False, data_root: Path | None = None) -> None
                     sprint_blend = 0.0
                     step_timer = 0.0
                     view_bob_phase = 0.0
+                    recoil_bloom = 0.0
                     checkpoint = None
                     checkpoint_notice_timer = 0.0
                 elif event.key == pygame.K_F1:
@@ -1062,6 +1072,15 @@ def run_runtime(smoke_test: bool = False, data_root: Path | None = None) -> None
                 if active_weapon.id == "shotgun":
                     ray_offsets = (-0.08, -0.04, 0.0, 0.04, 0.08)
                     per_pellet_damage = max(1, active_weapon.damage // 3)
+                else:
+                    dynamic_spread = recoil_bloom
+                    if moving:
+                        dynamic_spread += MOVE_SPREAD_RAD
+                    if is_sprinting:
+                        dynamic_spread += SPRINT_SPREAD_RAD
+                    dynamic_spread = min(RECOIL_SPREAD_MAX_RAD, dynamic_spread)
+                    if dynamic_spread > 0.0005:
+                        ray_offsets = (random.uniform(-dynamic_spread, dynamic_spread),)
                 if can_fire:
                     fire, _target = attempt_fire_multi(
                         shot_cooldown,
@@ -1078,6 +1097,12 @@ def run_runtime(smoke_test: bool = False, data_root: Path | None = None) -> None
                         audio.play(event_name)
                     if fire.fired:
                         magazine_counts[active_weapon.id] = max(0, magazine_ammo - 1)
+                        if active_weapon.id == "smg":
+                            recoil_bloom = min(RECOIL_SPREAD_MAX_RAD, recoil_bloom + 0.0085)
+                        elif active_weapon.id == "autorifle":
+                            recoil_bloom = min(RECOIL_SPREAD_MAX_RAD, recoil_bloom + 0.006)
+                        elif active_weapon.id == "pistol":
+                            recoil_bloom = min(RECOIL_SPREAD_MAX_RAD, recoil_bloom + 0.01)
                         shots_fired += 1
                     if fire.hit_enemy:
                         shots_hit += 1
@@ -1096,6 +1121,7 @@ def run_runtime(smoke_test: bool = False, data_root: Path | None = None) -> None
         weapon_fx_timer = max(0.0, weapon_fx_timer - decay_dt)
         damage_flash_timer = max(0.0, damage_flash_timer - decay_dt)
         hit_confirm_timer = max(0.0, hit_confirm_timer - decay_dt)
+        recoil_bloom = max(0.0, recoil_bloom - RECOIL_BLOOM_DECAY_PER_SECOND * decay_dt)
         dry_fire_timer = max(0.0, dry_fire_timer - decay_dt)
         heal_flash_timer = max(0.0, heal_flash_timer - decay_dt)
         checkpoint_notice_timer = max(0.0, checkpoint_notice_timer - decay_dt)
@@ -1128,6 +1154,7 @@ def run_runtime(smoke_test: bool = False, data_root: Path | None = None) -> None
                 sprint_blend = 0.0
                 step_timer = 0.0
                 view_bob_phase = 0.0
+                recoil_bloom = 0.0
                 reload_timer = 0.0
                 reload_weapon_id = None
                 checkpoint = None
@@ -1204,6 +1231,9 @@ def run_runtime(smoke_test: bool = False, data_root: Path | None = None) -> None
             hud_lines.append("Exhausted: recover stamina")
         elif simulation_active and is_sprinting:
             hud_lines.append("Sprinting")
+        if active_weapon.id != "shotgun":
+            stability = max(0, min(100, int(100 - (recoil_bloom / RECOIL_SPREAD_MAX_RAD) * 100)))
+            hud_lines.append(f"Weapon stability: {stability}%")
         active_mag = magazine_counts.get(active_weapon.id, 0)
         active_reserve = ammo_counts.get(ammo_type, 0)
         hud_lines.append(f"Ammo ({ammo_type}): {active_mag}/{active_weapon.magazine_size} | reserve {active_reserve}")

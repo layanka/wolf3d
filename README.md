@@ -33,10 +33,11 @@ UV_CACHE_DIR=.uv-cache uv run python main.py
 
 Door behavior:
 - Doors auto-close after a short delay.
-- Doors stay open while you are in or near the doorway.
+- Doors stay open if you are inside the doorway tile.
 - Doors are rendered as a thin sliding slab with a darker frame and fixed side posts.
 - Weapon uses a hitscan model with a short-lived visual tracer and impact spark.
 - Closed doors require explicit `Space` interaction to open.
+- Closed doors fully block visibility and shots.
 
 Expected visuals:
 - Blue-gray floor/ceiling bands
@@ -48,7 +49,7 @@ Expected visuals:
 - Enemy marker on minimap (red when alive, gray when down)
 - Small center reticle appears when aiming at an interactable door
 - Bottom-center weapon overlay with recoil and muzzle flash on fire
-- File-based SFX (`WAV`/`OGG`) for shooting, hits, enemy down, door, and footsteps
+- File-based SFX (`OGG`) for shooting, hits, enemy down, door, and footsteps
 - Footsteps are intentionally low-volume/subtle while moving
 
 Audio source and license notes:

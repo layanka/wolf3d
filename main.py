@@ -791,13 +791,12 @@ def run(smoke_test: bool = False) -> None:
         draw_weapon_overlay(surface, internal_w, internal_h, recoil_timer, muzzle_flash_timer)
 
         weapon_state = "READY" if shot_cooldown_timer <= 0.0 else "COOLDOWN"
-        hud_text = (
-            f"Enemy: down  Weapon: {weapon_state}"
-            if not enemy.alive
-            else f"Enemy HP: {enemy.health}  Weapon: {weapon_state}  (F or LMB to shoot)"
-        )
-        hud_surface = font.render(hud_text, True, (220, 220, 225))
-        surface.blit(hud_surface, (6, internal_h - 14))
+        status_text = f"Enemy: DOWN | Weapon: {weapon_state}" if not enemy.alive else f"Enemy HP: {enemy.health} | Weapon: {weapon_state}"
+        status_surface = font.render(status_text, True, (220, 220, 225))
+        surface.blit(status_surface, (6, internal_h - 14))
+        if door_in_front is not None:
+            hint_surface = font.render("SPACE: Door", True, (245, 190, 75))
+            surface.blit(hint_surface, (internal_w - 72, internal_h - 14))
 
         scaled = pygame.transform.scale(surface, (screen_w, screen_h))
         screen.blit(scaled, (0, 0))

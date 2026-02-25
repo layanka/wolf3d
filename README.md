@@ -47,6 +47,7 @@ Runtime shell data sources:
 - `R`: retry current level after death (runtime shell)
 - `N`: restart campaign after final level completion (runtime shell)
 - `F1/F2/F3`: set difficulty (`easy` / `normal` / `hard`) at runtime
+- `H`: show/hide in-game controls help overlay
 - `Esc`: quit
 
 Door behavior:

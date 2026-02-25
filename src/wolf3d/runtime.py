@@ -267,6 +267,32 @@ def draw_weapon_vfx(surface: pygame.Surface, weapon_id: str, timer: float) -> No
     pygame.draw.line(surface, color, (cx - radius + 1, cy), (cx + radius - 1, cy), 1)
 
 
+def draw_help_overlay(surface: pygame.Surface, font: pygame.font.Font) -> None:
+    overlay = pygame.Surface(surface.get_size(), pygame.SRCALPHA)
+    overlay.fill((6, 8, 12, 205))
+    surface.blit(overlay, (0, 0))
+
+    lines = [
+        "Controls",
+        "WASD / Arrows: move and strafe",
+        "Q/E or Left/Right: turn",
+        "F or Left Click: fire",
+        "Space: door interaction",
+        "X: objective interaction",
+        "1/2/3/4: weapon select",
+        "C: save checkpoint",
+        "R: restore/retry on death",
+        "M: minimap toggle",
+        "F1/F2/F3: difficulty",
+        "H: toggle help",
+        "ESC: quit",
+    ]
+    for idx, line in enumerate(lines):
+        color = (245, 210, 120) if idx == 0 else (225, 225, 230)
+        text_surface = font.render(line, True, color)
+        surface.blit(text_surface, (18, 22 + idx * 12))
+
+
 def format_duration(seconds: float) -> str:
     total = max(0, int(seconds))
     minutes, secs = divmod(total, 60)
@@ -441,6 +467,7 @@ def run_runtime(smoke_test: bool = False, data_root: Path | None = None) -> None
     heal_flash_timer = 0.0
     checkpoint: RunCheckpoint | None = None
     checkpoint_notice_timer = 0.0
+    show_help = False
 
     level_idx = 0
     objective_state = build_objective_state(campaign[level_idx].id)
@@ -501,6 +528,8 @@ def run_runtime(smoke_test: bool = False, data_root: Path | None = None) -> None
                     running = False
                 elif event.key == pygame.K_m:
                     show_minimap = not show_minimap
+                elif event.key == pygame.K_h:
+                    show_help = not show_help
                 elif event.key == pygame.K_SPACE:
                     if not show_briefing and not player_dead and not campaign_complete:
                         world.toggle_door_in_front(player)
@@ -805,6 +834,8 @@ def run_runtime(smoke_test: bool = False, data_root: Path | None = None) -> None
                 hud_lines.append("Level clear! Press ENTER for next level")
         if show_briefing:
             hud_lines.append("Mission briefing active: ENTER to deploy")
+        if show_help:
+            hud_lines.append("Help open: press H to close")
         if player_dead:
             if checkpoint is not None and checkpoint.level_idx == level_idx:
                 hud_lines.append("You were eliminated: press R to restore checkpoint")
@@ -936,6 +967,8 @@ def run_runtime(smoke_test: bool = False, data_root: Path | None = None) -> None
             alpha = int(70 * (heal_flash_timer / 0.15))
             flash.fill((20, 140, 55, max(0, min(100, alpha))))
             surface.blit(flash, (0, 0))
+        if show_help:
+            draw_help_overlay(surface, font)
 
         screen.blit(pygame.transform.scale(surface, (screen_w, screen_h)), (0, 0))
         pygame.display.flip()

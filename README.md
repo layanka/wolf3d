@@ -125,6 +125,7 @@ Expected visuals:
 - Enemy loot economy now scales by difficulty and level, with chance-based ammo/medkit drops
 - Levels now support scripted trigger encounters (announcement + reinforcement spawns)
 - Campaign briefings now follow a single narrative arc with clearer objective wording
+- Level pacing pass now differentiates encounter density and route shape across all 3 maps
 
 Audio source and license notes:
 - [assets/audio/CREDITS.md](/Users/philippe.lefebvre2/Code/testing1/assets/audio/CREDITS.md)

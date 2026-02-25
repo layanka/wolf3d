@@ -77,11 +77,11 @@ Living feature backlog for the full game (post-PoC), with sprint IDs, status, or
   - Accept: at least one scripted encounter per level.
 - `FS-021` `done`: Story/briefing pass (consistent narrative arc and objective language).
   - Accept: briefings clearly communicate stakes and level intent.
-- `FS-022` `next`: Extended map set prep (3 production-ready levels with pacing pass).
+- `FS-022` `done`: Extended map set prep (3 production-ready levels with pacing pass).
   - Accept: each level has distinct route/encounter identity.
 
 ### Planned: Menus and Frontend Shell
-- `FS-023` `planned`: Title/options shell (new run, continue, settings, controls).
+- `FS-023` `next`: Title/options shell (new run, continue, settings, controls).
   - Accept: no code-side flag requirement for common startup flows.
 - `FS-024` `planned`: Pause/restart UX pass (clear state transitions, confirmations where needed).
   - Accept: no ambiguous key overlap and no accidental run loss.

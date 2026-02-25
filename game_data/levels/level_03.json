@@ -5,7 +5,8 @@
   "enemy_spawns": [
     {"type": "assault", "x": 8.5, "y": 5.5},
     {"type": "assault", "x": 10.5, "y": 6.5},
-    {"type": "commander", "x": 12.5, "y": 8.5}
+    {"type": "guard", "x": 5.5, "y": 8.5},
+    {"type": "commander", "x": 13.5, "y": 9.5}
   ],
   "weapon_pickups": [
     {"type": "autorifle", "x": 4.5, "y": 4.5}
@@ -13,10 +14,10 @@
   "scripted_events": [
     {
       "id": "beacon_guardians",
-      "trigger": {"x": 8.5, "y": 5.5, "radius": 1.0},
+      "trigger": {"x": 8.5, "y": 5.5, "radius": 1.1},
       "announcement": "Command reinforcements deployed",
       "enemy_spawns": [
-        {"type": "assault", "x": 11.5, "y": 8.5},
+        {"type": "assault", "x": 12.5, "y": 7.5},
         {"type": "guard", "x": 6.5, "y": 8.5}
       ]
     }

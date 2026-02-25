@@ -5,7 +5,8 @@
   "enemy_spawns": [
     {"type": "guard", "x": 7.5, "y": 3.5},
     {"type": "guard", "x": 9.5, "y": 7.5},
-    {"type": "hound", "x": 6.5, "y": 8.5}
+    {"type": "hound", "x": 6.5, "y": 8.5},
+    {"type": "guard", "x": 12.5, "y": 9.5}
   ],
   "weapon_pickups": [
     {"type": "smg", "x": 5.5, "y": 2.5}

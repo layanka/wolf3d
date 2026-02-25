@@ -26,6 +26,7 @@ from src.wolf3d.ui.hud import format_hud_lines
 from src.wolf3d.world.simulation import WorldSimulation
 
 INTERACT_RANGE = 0.7
+MAX_PLAYER_HEALTH = 100
 
 
 @dataclass
@@ -49,12 +50,13 @@ class DifficultyProfile:
     id: Literal["easy", "normal", "hard"]
     damage_mult: float
     ammo_gain_mult: float
+    heal_gain_mult: float
 
 
 DIFFICULTY_PROFILES: dict[str, DifficultyProfile] = {
-    "easy": DifficultyProfile(id="easy", damage_mult=0.75, ammo_gain_mult=1.35),
-    "normal": DifficultyProfile(id="normal", damage_mult=1.0, ammo_gain_mult=1.0),
-    "hard": DifficultyProfile(id="hard", damage_mult=1.35, ammo_gain_mult=0.75),
+    "easy": DifficultyProfile(id="easy", damage_mult=0.75, ammo_gain_mult=1.35, heal_gain_mult=1.25),
+    "normal": DifficultyProfile(id="normal", damage_mult=1.0, ammo_gain_mult=1.0, heal_gain_mult=1.0),
+    "hard": DifficultyProfile(id="hard", damage_mult=1.35, ammo_gain_mult=0.75, heal_gain_mult=0.7),
 }
 
 
@@ -278,6 +280,20 @@ def enemy_drop_ammo(enemy_type_id: str, ammo_gain_mult: float) -> dict[str, int]
     return _scale_ammo({"light": 5}, ammo_gain_mult)
 
 
+def enemy_drop_heal(enemy_type_id: str, heal_gain_mult: float) -> int:
+    if enemy_type_id == "hound":
+        base = 4
+    elif enemy_type_id == "guard":
+        base = 6
+    elif enemy_type_id == "assault":
+        base = 8
+    elif enemy_type_id == "commander":
+        base = 15
+    else:
+        base = 5
+    return max(1, int(round(base * heal_gain_mult)))
+
+
 def choose_fallback_weapon(
     current_idx: int,
     weapon_cycle: list[str],
@@ -345,13 +361,22 @@ def run_runtime(smoke_test: bool = False, data_root: Path | None = None) -> None
     difficulty = DIFFICULTY_PROFILES["normal"]
     ammo_counts = default_ammo_counts(difficulty.ammo_gain_mult)
     dry_fire_timer = 0.0
+    heal_flash_timer = 0.0
 
     level_idx = 0
     objective_state = build_objective_state(campaign[level_idx].id)
 
     def load_level_state(
         index: int,
-    ) -> tuple[WorldSimulation, PlayerState, list[EnemyState], list[dict[str, float | str]], list[dict[str, float | str]], str]:
+    ) -> tuple[
+        WorldSimulation,
+        PlayerState,
+        list[EnemyState],
+        list[dict[str, float | str]],
+        list[dict[str, float | str]],
+        list[dict[str, float | str]],
+        str,
+    ]:
         campaign_level = campaign[index]
         spec = level_specs[campaign_level.id]
         tile_map = load_level_map(data_root, spec)
@@ -374,9 +399,10 @@ def run_runtime(smoke_test: bool = False, data_root: Path | None = None) -> None
         for pickup in spec.weapon_pickups:
             pickups.append({"type": str(pickup["type"]), "x": float(pickup["x"]), "y": float(pickup["y"])})
         ammo_pickups: list[dict[str, float | str]] = []
-        return world, player, enemies, pickups, ammo_pickups, campaign_level.title
+        health_pickups: list[dict[str, float | str]] = []
+        return world, player, enemies, pickups, ammo_pickups, health_pickups, campaign_level.title
 
-    world, player, enemies, pickups, ammo_pickups, level_title = load_level_state(level_idx)
+    world, player, enemies, pickups, ammo_pickups, health_pickups, level_title = load_level_state(level_idx)
 
     running = True
     frames = 0
@@ -416,7 +442,7 @@ def run_runtime(smoke_test: bool = False, data_root: Path | None = None) -> None
                 elif event.key == pygame.K_4 and len(weapon_cycle) >= 4 and weapon_cycle[3] in unlocked_weapons:
                     current_weapon_idx = 3
                 elif event.key == pygame.K_r and player_dead:
-                    world, player, enemies, pickups, ammo_pickups, level_title = load_level_state(level_idx)
+                    world, player, enemies, pickups, ammo_pickups, health_pickups, level_title = load_level_state(level_idx)
                     shot_cooldown = 0.0
                     current_weapon_idx = 0
                     show_briefing = True
@@ -427,9 +453,10 @@ def run_runtime(smoke_test: bool = False, data_root: Path | None = None) -> None
                     level_elapsed = 0.0
                     level_kills = 0
                     dry_fire_timer = 0.0
+                    heal_flash_timer = 0.0
                 elif event.key == pygame.K_n and campaign_complete:
                     level_idx = 0
-                    world, player, enemies, pickups, ammo_pickups, level_title = load_level_state(level_idx)
+                    world, player, enemies, pickups, ammo_pickups, health_pickups, level_title = load_level_state(level_idx)
                     shot_cooldown = 0.0
                     current_weapon_idx = 0
                     unlocked_weapons = {weapon_cycle[0]}
@@ -446,6 +473,7 @@ def run_runtime(smoke_test: bool = False, data_root: Path | None = None) -> None
                     level_kills = 0
                     ammo_counts = default_ammo_counts(difficulty.ammo_gain_mult)
                     dry_fire_timer = 0.0
+                    heal_flash_timer = 0.0
                 elif event.key == pygame.K_F1:
                     difficulty = DIFFICULTY_PROFILES["easy"]
                 elif event.key == pygame.K_F2:
@@ -507,6 +535,15 @@ def run_runtime(smoke_test: bool = False, data_root: Path | None = None) -> None
                 pickup_amount = int(ammo_pickup["amount"])
                 ammo_counts[pickup_ammo_type] = ammo_counts.get(pickup_ammo_type, 0) + pickup_amount
                 ammo_pickups.remove(ammo_pickup)
+        for health_pickup in health_pickups[:]:
+            dx = float(health_pickup["x"]) - player.x
+            dy = float(health_pickup["y"]) - player.y
+            if dx * dx + dy * dy <= 0.35 * 0.35:
+                heal_amount = int(health_pickup["amount"])
+                if player.health < MAX_PLAYER_HEALTH:
+                    player.health = min(MAX_PLAYER_HEALTH, player.health + heal_amount)
+                    heal_flash_timer = 0.15
+                health_pickups.remove(health_pickup)
 
         for enemy in enemies:
             if enemy.alive or enemy.loot_dropped:
@@ -516,6 +553,13 @@ def run_runtime(smoke_test: bool = False, data_root: Path | None = None) -> None
                 ammo_pickups.append(
                     {"ammo_type": ammo_type, "amount": float(amount), "x": enemy.x, "y": enemy.y}
                 )
+            health_pickups.append(
+                {
+                    "amount": float(enemy_drop_heal(enemy.type_id, difficulty.heal_gain_mult)),
+                    "x": enemy.x + 0.08,
+                    "y": enemy.y - 0.06,
+                }
+            )
             kills_total += 1
             level_kills += 1
 
@@ -573,11 +617,12 @@ def run_runtime(smoke_test: bool = False, data_root: Path | None = None) -> None
         damage_flash_timer = max(0.0, damage_flash_timer - dt)
         hit_confirm_timer = max(0.0, hit_confirm_timer - dt)
         dry_fire_timer = max(0.0, dry_fire_timer - dt)
+        heal_flash_timer = max(0.0, heal_flash_timer - dt)
         level_cleared = objective_complete(objective_state, enemies)
         if level_cleared and not player_dead and next_level_requested:
             if level_idx < len(campaign) - 1:
                 level_idx += 1
-                world, player, enemies, pickups, ammo_pickups, level_title = load_level_state(level_idx)
+                world, player, enemies, pickups, ammo_pickups, health_pickups, level_title = load_level_state(level_idx)
                 shot_cooldown = 0.0
                 current_weapon_idx = 0
                 show_briefing = True
@@ -647,6 +692,10 @@ def run_runtime(smoke_test: bool = False, data_root: Path | None = None) -> None
             hud_lines.append("Low ammo")
         if dry_fire_timer > 0.0:
             hud_lines.append("Out of ammo")
+        if player.health <= 30:
+            hud_lines.append("Low health")
+        if heal_flash_timer > 0.0:
+            hud_lines.append("Medkit used")
         hud_lines.append(f"Time L/C: {format_duration(level_elapsed)} / {format_duration(campaign_elapsed)}")
         hud_lines.append(f"Kills L/C: {level_kills} / {kills_total}")
         objective_hint_node = nearest_objective_node(player, objective_state)
@@ -688,6 +737,10 @@ def run_runtime(smoke_test: bool = False, data_root: Path | None = None) -> None
                 ax = int(pad + float(ammo_pickup["x"]) * scale)
                 ay = int(pad + float(ammo_pickup["y"]) * scale)
                 pygame.draw.circle(surface, (120, 230, 235), (ax, ay), 1)
+            for health_pickup in health_pickups:
+                hx = int(pad + float(health_pickup["x"]) * scale)
+                hy = int(pad + float(health_pickup["y"]) * scale)
+                pygame.draw.circle(surface, (80, 240, 120), (hx, hy), 1)
             for projectile in active_projectiles:
                 sx = int(pad + projectile.x * scale)
                 sy = int(pad + projectile.y * scale)
@@ -737,6 +790,11 @@ def run_runtime(smoke_test: bool = False, data_root: Path | None = None) -> None
             flash = pygame.Surface((internal_w, internal_h), pygame.SRCALPHA)
             alpha = int(80 * (damage_flash_timer / 0.17))
             flash.fill((170, 18, 18, max(0, min(120, alpha))))
+            surface.blit(flash, (0, 0))
+        if heal_flash_timer > 0.0:
+            flash = pygame.Surface((internal_w, internal_h), pygame.SRCALPHA)
+            alpha = int(70 * (heal_flash_timer / 0.15))
+            flash.fill((20, 140, 55, max(0, min(100, alpha))))
             surface.blit(flash, (0, 0))
 
         screen.blit(pygame.transform.scale(surface, (screen_w, screen_h)), (0, 0))

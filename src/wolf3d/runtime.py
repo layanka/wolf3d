@@ -1435,6 +1435,8 @@ def run_runtime(smoke_test: bool = False, data_root: Path | None = None, quicklo
                 hud_lines.append("You were eliminated: press R to retry level")
         elif target_enemy is not None:
             hud_lines.append("Target in sights")
+        if simulation_active and snapshot.door_in_front:
+            hud_lines.append("Door ahead: press SPACE")
         hud_lines.append(objective_status_line(objective_state, enemies))
         if active_projectiles:
             hud_lines.append(f"Incoming: {len(active_projectiles)}")

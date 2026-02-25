@@ -113,6 +113,7 @@ Expected visuals:
 - Crosshair now shows hit and kill marker pulses on confirmed damage/down
 - HUD now shows contextual prompts when a door is in front (`SPACE`)
 - HUD now provides objective direction and distance guidance
+- HUD now includes a top-screen objective compass arrow
 - Crosshair now turns red when an enemy is in direct line of fire
 - HUD/briefing now display each level's campaign goal text (`win_condition`)
 

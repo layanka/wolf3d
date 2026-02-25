@@ -64,6 +64,8 @@ CROSSHAIR_BASE_RADIUS = 4
 CROSSHAIR_MAX_BLOOM = 9
 HITMARKER_RADIUS = 8
 KILLMARKER_RADIUS = 11
+OBJECTIVE_ARROW_Y = 16
+OBJECTIVE_ARROW_SIZE = 6
 
 
 @dataclass
@@ -241,6 +243,17 @@ def objective_nav_hint(player: PlayerState, target: tuple[float, float] | None) 
     else:
         turn_hint = "turn left"
     return f"Objective nav: {turn_hint} ({distance:.1f}m)"
+
+
+def objective_direction_delta(player: PlayerState, target: tuple[float, float] | None) -> float | None:
+    if target is None:
+        return None
+    dx = target[0] - player.x
+    dy = target[1] - player.y
+    if math.hypot(dx, dy) <= 0.01:
+        return 0.0
+    target_angle = math.atan2(dy, dx)
+    return normalize_angle(target_angle - player.angle)
 
 
 def process_objective_interaction(player: PlayerState, state: ObjectiveState, enemies: list[EnemyState]) -> None:
@@ -1542,6 +1555,16 @@ def run_runtime(smoke_test: bool = False, data_root: Path | None = None, quicklo
             color = (245, 210, 120) if "Level clear" in line else (220, 220, 225)
             hud_surface = font.render(line, True, color)
             surface.blit(hud_surface, (6, internal_h - 36 + i * 10))
+
+        objective_delta = objective_direction_delta(player, current_objective_target(objective_state, enemies))
+        if objective_delta is not None and not show_briefing and not campaign_complete:
+            indicator_x = internal_w // 2 + int((objective_delta / (fov / 2.0)) * (internal_w * 0.25))
+            indicator_x = max(OBJECTIVE_ARROW_SIZE + 2, min(internal_w - OBJECTIVE_ARROW_SIZE - 2, indicator_x))
+            arrow_color = (90, 220, 245)
+            top = (indicator_x, OBJECTIVE_ARROW_Y)
+            left = (indicator_x - OBJECTIVE_ARROW_SIZE, OBJECTIVE_ARROW_Y + OBJECTIVE_ARROW_SIZE)
+            right = (indicator_x + OBJECTIVE_ARROW_SIZE, OBJECTIVE_ARROW_Y + OBJECTIVE_ARROW_SIZE)
+            pygame.draw.polygon(surface, arrow_color, (top, left, right), 1)
 
         cx, cy = internal_w // 2, view_center_y
         if reload_timer > 0.0 and reload_weapon_id == active_weapon.id:

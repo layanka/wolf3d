@@ -10,6 +10,7 @@ from typing import Literal
 import pygame
 
 from src.wolf3d.audio.manager import route_simulation_audio_events
+from src.wolf3d.audio.runtime_audio import RuntimeAudioManager
 from src.wolf3d.content_loader import (
     load_campaign,
     load_enemy_types,
@@ -36,6 +37,7 @@ MIN_STAMINA_TO_SPRINT = 6.0
 SPRINT_RECOVER_UNLOCK = 22.0
 SPRINT_BLEND_IN_PER_SECOND = 7.0
 SPRINT_BLEND_OUT_PER_SECOND = 10.0
+STEP_INTERVAL_BASE = 0.35
 
 
 @dataclass
@@ -584,6 +586,7 @@ def run_runtime(smoke_test: bool = False, data_root: Path | None = None) -> None
     screen = pygame.display.set_mode((screen_w, screen_h))
     surface = pygame.Surface((internal_w, internal_h))
     font = pygame.font.Font(None, 18)
+    audio = RuntimeAudioManager(Path(__file__).resolve().parents[2])
     clock = pygame.time.Clock()
     pygame.display.set_caption("Wolf3D Real Runtime (Campaign Shell)")
 
@@ -625,6 +628,7 @@ def run_runtime(smoke_test: bool = False, data_root: Path | None = None) -> None
     stamina = STAMINA_MAX
     sprint_exhausted = False
     sprint_blend = 0.0
+    step_timer = 0.0
 
     level_idx = 0
     objective_state = build_objective_state(campaign[level_idx].id)
@@ -675,7 +679,7 @@ def run_runtime(smoke_test: bool = False, data_root: Path | None = None) -> None
         nonlocal unlocked_weapons, ammo_counts, magazine_counts, campaign_elapsed, level_elapsed
         nonlocal shots_fired, shots_hit, kills_total, level_kills, level_title
         nonlocal difficulty, stamina, sprint_exhausted, sprint_blend, show_briefing, player_dead, campaign_complete
-        nonlocal dry_fire_timer, heal_flash_timer, paused, reload_timer, reload_weapon_id
+        nonlocal dry_fire_timer, heal_flash_timer, paused, reload_timer, reload_weapon_id, step_timer
         nonlocal checkpoint_notice_timer, checkpoint_notice_text
 
         if checkpoint is None:
@@ -715,6 +719,7 @@ def run_runtime(smoke_test: bool = False, data_root: Path | None = None) -> None
         dry_fire_timer = 0.0
         heal_flash_timer = 0.0
         paused = False
+        step_timer = 0.0
         checkpoint_notice_text = "Checkpoint restored"
         checkpoint_notice_timer = 1.0
         return True
@@ -751,7 +756,8 @@ def run_runtime(smoke_test: bool = False, data_root: Path | None = None) -> None
                     pygame.mouse.set_visible(not mouse_look)
                 elif event.key == pygame.K_SPACE:
                     if not paused and not show_briefing and not player_dead and not campaign_complete:
-                        world.toggle_door_in_front(player)
+                        if world.toggle_door_in_front(player):
+                            audio.play("door")
                 elif event.key == pygame.K_f:
                     fire_requested = True
                 elif event.key == pygame.K_x:
@@ -792,12 +798,14 @@ def run_runtime(smoke_test: bool = False, data_root: Path | None = None) -> None
                         stamina = STAMINA_MAX
                         sprint_exhausted = False
                         sprint_blend = 0.0
+                        step_timer = 0.0
                         reload_timer = 0.0
                         reload_weapon_id = None
                     player_dead = False
                     campaign_complete = False
                     dry_fire_timer = 0.0
                     heal_flash_timer = 0.0
+                    step_timer = 0.0
                 elif event.key == pygame.K_r and not paused and not show_briefing and not player_dead and not campaign_complete:
                     reload_requested = True
                 elif event.key == pygame.K_n and campaign_complete:
@@ -826,6 +834,7 @@ def run_runtime(smoke_test: bool = False, data_root: Path | None = None) -> None
                     stamina = STAMINA_MAX
                     sprint_exhausted = False
                     sprint_blend = 0.0
+                    step_timer = 0.0
                     checkpoint = None
                     checkpoint_notice_timer = 0.0
                 elif event.key == pygame.K_F1:
@@ -887,6 +896,11 @@ def run_runtime(smoke_test: bool = False, data_root: Path | None = None) -> None
                 stamina = max(0.0, stamina - SPRINT_DRAIN_PER_SECOND * sprint_blend * dt)
             else:
                 stamina = min(STAMINA_MAX, stamina + STAMINA_RECOVER_PER_SECOND * dt)
+            step_timer = max(0.0, step_timer - dt)
+            if moving and step_timer <= 0.0:
+                audio.play_step()
+                step_interval = max(0.14, STEP_INTERVAL_BASE / max(1.0, speed_mult))
+                step_timer = step_interval
         if stamina <= 0.01:
             sprint_exhausted = True
         melee_damage = 0
@@ -1043,7 +1057,8 @@ def run_runtime(smoke_test: bool = False, data_root: Path | None = None) -> None
                         ray_offsets=ray_offsets,
                     )
                     shot_cooldown = fire.next_cooldown
-                    _ = route_simulation_audio_events(False, fire)
+                    for event_name in route_simulation_audio_events(False, fire):
+                        audio.play(event_name)
                     if fire.fired:
                         magazine_counts[active_weapon.id] = max(0, magazine_ammo - 1)
                         shots_fired += 1
@@ -1094,6 +1109,7 @@ def run_runtime(smoke_test: bool = False, data_root: Path | None = None) -> None
                 level_kills = 0
                 sprint_exhausted = False
                 sprint_blend = 0.0
+                step_timer = 0.0
                 reload_timer = 0.0
                 reload_weapon_id = None
                 checkpoint = None

@@ -410,7 +410,9 @@ def draw_help_overlay(surface: pygame.Surface, font: pygame.font.Font) -> None:
         "F1/F2/F3: difficulty",
         "F6: toggle perf HUD",
         "H: toggle help",
-        "ESC: quit",
+        "P: pause/resume",
+        "Q (while paused): quit (confirm)",
+        "ESC: pause/back (quit from menus)",
     ]
     for idx, line in enumerate(lines):
         color = (245, 210, 120) if idx == 0 else (225, 225, 230)
@@ -932,6 +934,8 @@ def run_runtime(smoke_test: bool = False, data_root: Path | None = None, quicklo
     show_help = False
     show_perf_hud = bool(settings.get("show_perf_hud", False))
     paused = False
+    pause_quit_confirm_timer = 0.0
+    campaign_restart_confirm_timer = 0.0
     mouse_look = False
     loaded_sens = _setting_float(settings, "mouse_sensitivity", 0.0028)
     mouse_sensitivity = max(MOUSE_SENSITIVITY_MIN, min(MOUSE_SENSITIVITY_MAX, loaded_sens))
@@ -1190,7 +1194,15 @@ def run_runtime(smoke_test: bool = False, data_root: Path | None = None, quicklo
                 running = False
             elif event.type == pygame.KEYDOWN:
                 if event.key == pygame.K_ESCAPE:
-                    running = False
+                    if paused:
+                        paused = False
+                        pause_quit_confirm_timer = 0.0
+                    elif show_help:
+                        show_help = False
+                    elif not show_briefing and not player_dead and not campaign_complete:
+                        paused = True
+                    else:
+                        running = False
                 elif event.key == pygame.K_m:
                     show_minimap = not show_minimap
                     persist_runtime_settings()
@@ -1203,6 +1215,13 @@ def run_runtime(smoke_test: bool = False, data_root: Path | None = None, quicklo
                     settings_notice_timer = 1.0
                 elif event.key == pygame.K_p:
                     paused = not paused
+                    if not paused:
+                        pause_quit_confirm_timer = 0.0
+                elif event.key == pygame.K_q and paused:
+                    if pause_quit_confirm_timer > 0.0:
+                        running = False
+                    else:
+                        pause_quit_confirm_timer = 2.0
                 elif event.key == pygame.K_z:
                     minimap_scale_idx = (minimap_scale_idx + 1) % len(minimap_scale_levels)
                     persist_runtime_settings()
@@ -1340,58 +1359,62 @@ def run_runtime(smoke_test: bool = False, data_root: Path | None = None, quicklo
                 elif event.key == pygame.K_r and not paused and not show_briefing and not player_dead and not campaign_complete:
                     reload_requested = True
                 elif event.key == pygame.K_n and campaign_complete:
-                    level_idx = 0
-                    (
-                        world,
-                        player,
-                        enemies,
-                        pickups,
-                        ammo_pickups,
-                        health_pickups,
-                        scripted_events,
-                        level_title,
-                        level_win_condition,
-                    ) = load_level_state(level_idx)
-                    triggered_script_events.clear()
-                    script_notice_timer = 0.0
-                    script_notice_text = ""
-                    shot_cooldown = 0.0
-                    current_weapon_idx = 0
-                    pending_weapon_idx = None
-                    weapon_swap_timer = 0.0
-                    unlocked_weapons = {weapon_cycle[0]}
-                    show_briefing = True
-                    player_dead = False
-                    campaign_complete = False
-                    active_projectiles.clear()
-                    objective_state = build_objective_state(campaign[level_idx].id)
-                    campaign_elapsed = 0.0
-                    level_elapsed = 0.0
-                    shots_fired = 0
-                    shots_hit = 0
-                    kills_total = 0
-                    level_kills = 0
-                    ammo_counts = default_ammo_counts(difficulty.ammo_gain_mult)
-                    magazine_counts = build_initial_magazines(weapon_cycle, weapons_by_id, ammo_counts)
-                    reload_timer = 0.0
-                    reload_weapon_id = None
-                    dry_fire_timer = 0.0
-                    heal_flash_timer = 0.0
-                    kill_confirm_timer = 0.0
-                    melee_hit_flash_timer = 0.0
-                    projectile_hit_flash_timer = 0.0
-                    near_miss_timer = 0.0
-                    near_miss_angle = None
-                    damage_direction_timer = 0.0
-                    damage_direction_angle = None
-                    stamina = STAMINA_MAX
-                    sprint_exhausted = False
-                    sprint_blend = 0.0
-                    step_timer = 0.0
-                    view_bob_phase = 0.0
-                    recoil_bloom = 0.0
-                    checkpoint = None
-                    checkpoint_notice_timer = 0.0
+                    if campaign_restart_confirm_timer <= 0.0:
+                        campaign_restart_confirm_timer = 2.0
+                    else:
+                        level_idx = 0
+                        (
+                            world,
+                            player,
+                            enemies,
+                            pickups,
+                            ammo_pickups,
+                            health_pickups,
+                            scripted_events,
+                            level_title,
+                            level_win_condition,
+                        ) = load_level_state(level_idx)
+                        triggered_script_events.clear()
+                        script_notice_timer = 0.0
+                        script_notice_text = ""
+                        shot_cooldown = 0.0
+                        current_weapon_idx = 0
+                        pending_weapon_idx = None
+                        weapon_swap_timer = 0.0
+                        unlocked_weapons = {weapon_cycle[0]}
+                        show_briefing = True
+                        player_dead = False
+                        campaign_complete = False
+                        active_projectiles.clear()
+                        objective_state = build_objective_state(campaign[level_idx].id)
+                        campaign_elapsed = 0.0
+                        level_elapsed = 0.0
+                        shots_fired = 0
+                        shots_hit = 0
+                        kills_total = 0
+                        level_kills = 0
+                        ammo_counts = default_ammo_counts(difficulty.ammo_gain_mult)
+                        magazine_counts = build_initial_magazines(weapon_cycle, weapons_by_id, ammo_counts)
+                        reload_timer = 0.0
+                        reload_weapon_id = None
+                        dry_fire_timer = 0.0
+                        heal_flash_timer = 0.0
+                        kill_confirm_timer = 0.0
+                        melee_hit_flash_timer = 0.0
+                        projectile_hit_flash_timer = 0.0
+                        near_miss_timer = 0.0
+                        near_miss_angle = None
+                        damage_direction_timer = 0.0
+                        damage_direction_angle = None
+                        stamina = STAMINA_MAX
+                        sprint_exhausted = False
+                        sprint_blend = 0.0
+                        step_timer = 0.0
+                        view_bob_phase = 0.0
+                        recoil_bloom = 0.0
+                        checkpoint = None
+                        checkpoint_notice_timer = 0.0
+                        campaign_restart_confirm_timer = 0.0
                 elif event.key == pygame.K_F1:
                     difficulty = DIFFICULTY_PROFILES["easy"]
                     persist_runtime_settings()
@@ -1743,6 +1766,8 @@ def run_runtime(smoke_test: bool = False, data_root: Path | None = None, quicklo
         checkpoint_notice_timer = max(0.0, checkpoint_notice_timer - decay_dt)
         settings_notice_timer = max(0.0, settings_notice_timer - decay_dt)
         script_notice_timer = max(0.0, script_notice_timer - decay_dt)
+        pause_quit_confirm_timer = max(0.0, pause_quit_confirm_timer - decay_dt)
+        campaign_restart_confirm_timer = max(0.0, campaign_restart_confirm_timer - decay_dt)
         persist_runtime_settings()
         was_reloading = reload_timer > 0.0
         reload_timer = max(0.0, reload_timer - decay_dt)
@@ -1845,7 +1870,9 @@ def run_runtime(smoke_test: bool = False, data_root: Path | None = None, quicklo
         if show_briefing:
             hud_lines.append("Mission briefing active: ENTER to deploy")
         if paused:
-            hud_lines.append("Paused: press P to resume")
+            hud_lines.append("Paused: P resume | Q quit")
+            if pause_quit_confirm_timer > 0.0:
+                hud_lines.append("Press Q again to confirm quit")
         if show_help:
             hud_lines.append("Help open: press H to close")
         if mouse_look:
@@ -2062,7 +2089,10 @@ def run_runtime(smoke_test: bool = False, data_root: Path | None = None, quicklo
                 True,
                 (225, 235, 185),
             )
-            restart_surface = font.render("Press N to restart campaign", True, (235, 235, 185))
+            restart_text = (
+                "Press N again to confirm restart" if campaign_restart_confirm_timer > 0.0 else "Press N to restart campaign"
+            )
+            restart_surface = font.render(restart_text, True, (235, 235, 185))
             surface.blit(win_surface, (16, 86))
             surface.blit(stats_surface, (16, 102))
             surface.blit(restart_surface, (16, 118))
@@ -2071,9 +2101,12 @@ def run_runtime(smoke_test: bool = False, data_root: Path | None = None, quicklo
             overlay.fill((8, 10, 14, 165))
             surface.blit(overlay, (0, 0))
             paused_surface = font.render("PAUSED", True, (240, 220, 150))
-            resume_surface = font.render("Press P to continue", True, (230, 230, 220))
+            resume_surface = font.render("P: continue | Q: quit", True, (230, 230, 220))
             surface.blit(paused_surface, (16, 86))
             surface.blit(resume_surface, (16, 102))
+            if pause_quit_confirm_timer > 0.0:
+                confirm_surface = font.render("Press Q again to confirm quit", True, (245, 205, 160))
+                surface.blit(confirm_surface, (16, 118))
 
         if damage_flash_timer > 0.0:
             flash = pygame.Surface((internal_w, internal_h), pygame.SRCALPHA)

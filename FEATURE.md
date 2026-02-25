@@ -83,11 +83,11 @@ Living feature backlog for the full game (post-PoC), with sprint IDs, status, or
 ### Planned: Menus and Frontend Shell
 - `FS-023` `done`: Title/options shell (new run, continue, settings, controls).
   - Accept: no code-side flag requirement for common startup flows.
-- `FS-024` `next`: Pause/restart UX pass (clear state transitions, confirmations where needed).
+- `FS-024` `done`: Pause/restart UX pass (clear state transitions, confirmations where needed).
   - Accept: no ambiguous key overlap and no accidental run loss.
 
 ### Planned: Stabilization and Release Readiness
-- `FS-025` `planned`: Test harness foundation (`tests/`) for loader/runtime pure logic paths.
+- `FS-025` `next`: Test harness foundation (`tests/`) for loader/runtime pure logic paths.
   - Accept: CI-style deterministic checks for settings/save/load/contracts.
 - `FS-026` `planned`: Performance pass (hotspot profiling, selective optimization).
   - Accept: steady 60 FPS target on typical maps; bottlenecks documented.

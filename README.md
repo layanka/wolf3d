@@ -61,16 +61,17 @@ Runtime shell data sources:
 - `F9`: quick-load checkpoint
 - `F11`: delete disk quick-save file
 - `P`: pause/resume gameplay
+- `Q` (while paused): quit (press twice to confirm)
 - `1/2/3/4`: switch weapon archetype (`pistol` / `smg` / `shotgun` / `autorifle`)
 - `M`: toggle minimap
 - `Z`: cycle minimap zoom levels
 - `Enter`: dismiss level briefing / advance to next level after level clear (runtime shell)
 - `R`: reload current weapon magazine (runtime shell)
 - `R`: restore checkpoint / retry current level after death (runtime shell)
-- `N`: restart campaign after final level completion (runtime shell)
+- `N`: restart campaign after final level completion (press twice to confirm)
 - `F1/F2/F3`: set difficulty (`easy` / `normal` / `hard`) at runtime
 - `H`: show/hide in-game controls help overlay
-- `Esc`: quit
+- `Esc`: pause/back (quit from title/death/complete states)
 
 Door behavior:
 - Doors auto-close after a short delay.
@@ -134,6 +135,7 @@ Expected visuals:
 - Campaign briefings now follow a single narrative arc with clearer objective wording
 - Level pacing pass now differentiates encounter density and route shape across all 3 maps
 - Runtime starts with an in-game title/options shell (new run or continue quick-save)
+- Pause/quit and campaign-restart flows now require explicit confirmation for destructive transitions
 
 Audio source and license notes:
 - [assets/audio/CREDITS.md](/Users/philippe.lefebvre2/Code/testing1/assets/audio/CREDITS.md)

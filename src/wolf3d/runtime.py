@@ -55,6 +55,8 @@ SETTINGS_FILE = "settings.json"
 MOUSE_SENSITIVITY_MIN = 0.0012
 MOUSE_SENSITIVITY_MAX = 0.0065
 MOUSE_SENSITIVITY_STEP = 0.0003
+CROSSHAIR_BASE_RADIUS = 4
+CROSSHAIR_MAX_BLOOM = 9
 
 
 @dataclass
@@ -1396,14 +1398,18 @@ def run_runtime(smoke_test: bool = False, data_root: Path | None = None, quicklo
             surface.blit(hud_surface, (6, internal_h - 36 + i * 10))
 
         cx, cy = internal_w // 2, view_center_y
-        if target_enemy is not None:
+        if reload_timer > 0.0 and reload_weapon_id == active_weapon.id:
+            crosshair_color = (110, 180, 255)
+        elif target_enemy is not None:
             crosshair_color = (245, 90, 90)
         elif snapshot.door_in_front:
             crosshair_color = (245, 190, 75)
         else:
             crosshair_color = (245, 245, 245)
-        pygame.draw.line(surface, crosshair_color, (cx - 4, cy), (cx + 4, cy), 1)
-        pygame.draw.line(surface, crosshair_color, (cx, cy - 4), (cx, cy + 4), 1)
+        bloom_factor = 0.0 if active_weapon.id == "shotgun" else min(1.0, recoil_bloom / RECOIL_SPREAD_MAX_RAD)
+        dynamic_radius = CROSSHAIR_BASE_RADIUS + int(round((CROSSHAIR_MAX_BLOOM - CROSSHAIR_BASE_RADIUS) * bloom_factor))
+        pygame.draw.line(surface, crosshair_color, (cx - dynamic_radius, cy), (cx + dynamic_radius, cy), 1)
+        pygame.draw.line(surface, crosshair_color, (cx, cy - dynamic_radius), (cx, cy + dynamic_radius), 1)
         draw_weapon_vfx(surface, weapon_fx_id, weapon_fx_timer, view_center_y)
 
         if show_minimap:

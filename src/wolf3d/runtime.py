@@ -71,6 +71,8 @@ DAMAGE_DIR_TIMER_SECONDS = 0.4
 SHOTGUN_SLUG_DAMAGE = 38
 SHOTGUN_SLUG_RANGE_BONUS = 4.0
 SHOTGUN_SLUG_COOLDOWN_MULT = 1.28
+LEVEL_ECON_BONUS_PER_LEVEL = 0.12
+LEVEL_ECON_MAX_BONUS = 0.24
 
 
 @dataclass
@@ -463,19 +465,35 @@ def pickup_ammo_bonus(weapon_id: str, ammo_gain_mult: float) -> dict[str, int]:
     return _scale_ammo({"light": 12}, ammo_gain_mult)
 
 
-def enemy_drop_ammo(enemy_type_id: str, ammo_gain_mult: float) -> dict[str, int]:
+def _level_econ_factor(level_idx: int) -> float:
+    return 1.0 + min(LEVEL_ECON_MAX_BONUS, max(0.0, level_idx * LEVEL_ECON_BONUS_PER_LEVEL))
+
+
+def _drop_chance(base: float, difficulty_id: str, level_idx: int, increase_with_level: bool = True) -> float:
+    difficulty_bonus = 0.0
+    if difficulty_id == "easy":
+        difficulty_bonus = 0.12
+    elif difficulty_id == "hard":
+        difficulty_bonus = -0.1
+    level_bonus = min(0.12, level_idx * 0.06) if increase_with_level else -min(0.1, level_idx * 0.05)
+    return max(0.08, min(1.0, base + difficulty_bonus + level_bonus))
+
+
+def enemy_drop_ammo(enemy_type_id: str, ammo_gain_mult: float, level_idx: int) -> dict[str, int]:
+    level_factor = _level_econ_factor(level_idx)
     if enemy_type_id == "guard":
-        return _scale_ammo({"light": 8}, ammo_gain_mult)
+        return _scale_ammo({"light": int(round(8 * level_factor))}, ammo_gain_mult)
     if enemy_type_id == "assault":
-        return _scale_ammo({"rifle": 12}, ammo_gain_mult)
+        return _scale_ammo({"rifle": int(round(12 * level_factor))}, ammo_gain_mult)
     if enemy_type_id == "hound":
-        return _scale_ammo({"light": 4}, ammo_gain_mult)
+        return _scale_ammo({"light": int(round(4 * level_factor))}, ammo_gain_mult)
     if enemy_type_id == "commander":
-        return _scale_ammo({"rifle": 24, "shell": 6}, ammo_gain_mult)
-    return _scale_ammo({"light": 5}, ammo_gain_mult)
+        return _scale_ammo({"rifle": int(round(24 * level_factor)), "shell": int(round(6 * level_factor))}, ammo_gain_mult)
+    return _scale_ammo({"light": int(round(5 * level_factor))}, ammo_gain_mult)
 
 
-def enemy_drop_heal(enemy_type_id: str, heal_gain_mult: float) -> int:
+def enemy_drop_heal(enemy_type_id: str, heal_gain_mult: float, level_idx: int) -> int:
+    level_factor = 1.0 + min(0.16, level_idx * 0.08)
     if enemy_type_id == "hound":
         base = 4
     elif enemy_type_id == "guard":
@@ -486,7 +504,36 @@ def enemy_drop_heal(enemy_type_id: str, heal_gain_mult: float) -> int:
         base = 15
     else:
         base = 5
-    return max(1, int(round(base * heal_gain_mult)))
+    return max(1, int(round(base * level_factor * heal_gain_mult)))
+
+
+def enemy_ammo_drop_chance(enemy_type_id: str, difficulty_id: str, level_idx: int) -> float:
+    if enemy_type_id == "guard":
+        base = 0.72
+    elif enemy_type_id == "assault":
+        base = 0.68
+    elif enemy_type_id == "hound":
+        base = 0.34
+    elif enemy_type_id == "commander":
+        base = 1.0
+    else:
+        base = 0.55
+    return _drop_chance(base, difficulty_id, level_idx, increase_with_level=True)
+
+
+def enemy_heal_drop_chance(enemy_type_id: str, difficulty_id: str, level_idx: int, missing_health: int) -> float:
+    if enemy_type_id == "hound":
+        base = 0.2
+    elif enemy_type_id == "guard":
+        base = 0.34
+    elif enemy_type_id == "assault":
+        base = 0.42
+    elif enemy_type_id == "commander":
+        base = 0.95
+    else:
+        base = 0.28
+    health_pressure_bonus = min(0.26, max(0, missing_health) / 300.0)
+    return max(0.08, min(1.0, _drop_chance(base, difficulty_id, level_idx, increase_with_level=False) + health_pressure_bonus))
 
 
 def build_initial_magazines(
@@ -1370,17 +1417,20 @@ def run_runtime(smoke_test: bool = False, data_root: Path | None = None, quicklo
             if enemy.alive or enemy.loot_dropped:
                 continue
             enemy.loot_dropped = True
-            for ammo_type, amount in enemy_drop_ammo(enemy.type_id, difficulty.ammo_gain_mult).items():
-                ammo_pickups.append(
-                    {"ammo_type": ammo_type, "amount": float(amount), "x": enemy.x, "y": enemy.y}
+            if random.random() <= enemy_ammo_drop_chance(enemy.type_id, difficulty.id, level_idx):
+                for ammo_type, amount in enemy_drop_ammo(enemy.type_id, difficulty.ammo_gain_mult, level_idx).items():
+                    ammo_pickups.append(
+                        {"ammo_type": ammo_type, "amount": float(amount), "x": enemy.x, "y": enemy.y}
+                    )
+            missing_health = MAX_PLAYER_HEALTH - player.health
+            if random.random() <= enemy_heal_drop_chance(enemy.type_id, difficulty.id, level_idx, missing_health):
+                health_pickups.append(
+                    {
+                        "amount": float(enemy_drop_heal(enemy.type_id, difficulty.heal_gain_mult, level_idx)),
+                        "x": enemy.x + 0.08,
+                        "y": enemy.y - 0.06,
+                    }
                 )
-            health_pickups.append(
-                {
-                    "amount": float(enemy_drop_heal(enemy.type_id, difficulty.heal_gain_mult)),
-                    "x": enemy.x + 0.08,
-                    "y": enemy.y - 0.06,
-                }
-            )
             kills_total += 1
             level_kills += 1
 

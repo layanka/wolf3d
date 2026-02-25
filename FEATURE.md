@@ -69,11 +69,11 @@ Living feature backlog for the full game (post-PoC), with sprint IDs, status, or
   - Accept: each weapon has unique handling profile without balance breaks.
 - `FS-018` `done`: Secondary fire prototype for one weapon.
   - Accept: alternate mode implemented, documented, and balanced enough for playtest.
-- `FS-019` `next`: Pickup economy pass (ammo/medkit drop tuning by difficulty + level).
+- `FS-019` `done`: Pickup economy pass (ammo/medkit drop tuning by difficulty + level).
   - Accept: resource flow avoids starvation and trivial abundance.
 
 ### Planned: Level and Content Pipeline
-- `FS-020` `planned`: Level scripting events (triggered spawns/locks/objective beats).
+- `FS-020` `next`: Level scripting events (triggered spawns/locks/objective beats).
   - Accept: at least one scripted encounter per level.
 - `FS-021` `planned`: Story/briefing pass (consistent narrative arc and objective language).
   - Accept: briefings clearly communicate stakes and level intent.

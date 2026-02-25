@@ -1,0 +1,13 @@
+{
+  "id": "level_01",
+  "map_file": "TBD",
+  "spawn": {"x": 1.5, "y": 1.5, "angle": 0.2},
+  "enemy_spawns": [
+    {"type": "guard", "x": 7.5, "y": 3.5},
+    {"type": "guard", "x": 9.5, "y": 7.5},
+    {"type": "hound", "x": 6.5, "y": 8.5}
+  ],
+  "weapon_pickups": [
+    {"type": "smg", "x": 5.5, "y": 2.5}
+  ]
+}

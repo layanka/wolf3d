@@ -1,0 +1,27 @@
+{
+  "campaign_id": "operation_iron_corridor",
+  "title": "Operation Iron Corridor",
+  "levels": [
+    {
+      "id": "level_01",
+      "title": "Breach Point",
+      "briefing": "Infiltrate the outer garrison and secure the elevator key.",
+      "win_condition": "Reach extraction door with keycard",
+      "next_level": "level_02"
+    },
+    {
+      "id": "level_02",
+      "title": "Machine Hall",
+      "briefing": "Shut down the refinery core while hostile patrols converge.",
+      "win_condition": "Disable all three control consoles",
+      "next_level": "level_03"
+    },
+    {
+      "id": "level_03",
+      "title": "Command Vault",
+      "briefing": "Defeat the commander and transmit the extraction beacon.",
+      "win_condition": "Eliminate commander and activate beacon",
+      "next_level": null
+    }
+  ]
+}

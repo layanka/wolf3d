@@ -1,0 +1,40 @@
+{
+  "enemy_types": [
+    {
+      "id": "guard",
+      "label": "Guard",
+      "health": 50,
+      "move_speed": 1.6,
+      "attack_range": 7.0,
+      "attack_damage": 8,
+      "behavior": "patrol_chase_shoot"
+    },
+    {
+      "id": "assault",
+      "label": "Assault Trooper",
+      "health": 90,
+      "move_speed": 1.9,
+      "attack_range": 8.0,
+      "attack_damage": 14,
+      "behavior": "aggressive_flank"
+    },
+    {
+      "id": "hound",
+      "label": "Attack Hound",
+      "health": 35,
+      "move_speed": 2.8,
+      "attack_range": 1.0,
+      "attack_damage": 18,
+      "behavior": "rush_melee"
+    },
+    {
+      "id": "commander",
+      "label": "Commander",
+      "health": 220,
+      "move_speed": 1.3,
+      "attack_range": 10.0,
+      "attack_damage": 20,
+      "behavior": "boss_phase"
+    }
+  ]
+}

@@ -1,0 +1,36 @@
+{
+  "weapon_types": [
+    {
+      "id": "pistol",
+      "label": "Service Pistol",
+      "damage": 18,
+      "cooldown": 0.28,
+      "range": 10.0,
+      "ammo_type": "light"
+    },
+    {
+      "id": "smg",
+      "label": "SMG-9",
+      "damage": 10,
+      "cooldown": 0.09,
+      "range": 9.0,
+      "ammo_type": "light"
+    },
+    {
+      "id": "shotgun",
+      "label": "Trench Shotgun",
+      "damage": 52,
+      "cooldown": 0.82,
+      "range": 5.0,
+      "ammo_type": "shell"
+    },
+    {
+      "id": "autorifle",
+      "label": "AR-47",
+      "damage": 16,
+      "cooldown": 0.14,
+      "range": 12.0,
+      "ammo_type": "rifle"
+    }
+  ]
+}

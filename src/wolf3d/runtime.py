@@ -278,6 +278,7 @@ def draw_help_overlay(surface: pygame.Surface, font: pygame.font.Font) -> None:
         "Q/E or Left/Right: turn",
         "TAB: toggle mouse-look",
         "F or Left Click: fire",
+        "Mouse Wheel / [ ]: cycle weapons",
         "Space: door interaction",
         "X: objective interaction",
         "1/2/3/4: weapon select",
@@ -367,6 +368,22 @@ def choose_fallback_weapon(
             continue
         ammo_type = weapons_by_id[weapon_id].ammo_type
         if ammo_counts.get(ammo_type, 0) > 0:
+            return idx
+    return current_idx
+
+
+def cycle_weapon_index(
+    current_idx: int,
+    step: int,
+    weapon_cycle: list[str],
+    unlocked_weapons: set[str],
+) -> int:
+    if not weapon_cycle or step == 0:
+        return current_idx
+    idx = current_idx
+    for _ in range(len(weapon_cycle)):
+        idx = (idx + step) % len(weapon_cycle)
+        if weapon_cycle[idx] in unlocked_weapons:
             return idx
     return current_idx
 
@@ -523,6 +540,7 @@ def run_runtime(smoke_test: bool = False, data_root: Path | None = None) -> None
         next_level_requested = False
         interact_requested = False
         checkpoint_requested = False
+        weapon_cycle_step = 0
 
         for event in pygame.event.get():
             if event.type == pygame.QUIT:
@@ -562,6 +580,10 @@ def run_runtime(smoke_test: bool = False, data_root: Path | None = None) -> None
                     current_weapon_idx = 2
                 elif event.key == pygame.K_4 and len(weapon_cycle) >= 4 and weapon_cycle[3] in unlocked_weapons:
                     current_weapon_idx = 3
+                elif event.key == pygame.K_LEFTBRACKET:
+                    weapon_cycle_step = -1
+                elif event.key == pygame.K_RIGHTBRACKET:
+                    weapon_cycle_step = 1
                 elif event.key == pygame.K_r and player_dead:
                     if checkpoint is not None and checkpoint.level_idx == level_idx:
                         world = deepcopy(checkpoint.world)
@@ -627,6 +649,11 @@ def run_runtime(smoke_test: bool = False, data_root: Path | None = None) -> None
                     difficulty = DIFFICULTY_PROFILES["hard"]
             elif event.type == pygame.MOUSEBUTTONDOWN and event.button == 1:
                 fire_requested = True
+            elif event.type == pygame.MOUSEWHEEL:
+                if event.y > 0:
+                    weapon_cycle_step = 1
+                elif event.y < 0:
+                    weapon_cycle_step = -1
             elif event.type == pygame.MOUSEMOTION and mouse_look and not paused and not player_dead and not campaign_complete:
                 player.angle += event.rel[0] * mouse_sensitivity
 
@@ -741,6 +768,8 @@ def run_runtime(smoke_test: bool = False, data_root: Path | None = None) -> None
 
         while weapon_cycle[current_weapon_idx] not in unlocked_weapons and current_weapon_idx > 0:
             current_weapon_idx -= 1
+        if weapon_cycle_step != 0:
+            current_weapon_idx = cycle_weapon_index(current_weapon_idx, weapon_cycle_step, weapon_cycle, unlocked_weapons)
         current_weapon_idx = choose_fallback_weapon(
             current_weapon_idx, weapon_cycle, unlocked_weapons, weapons_by_id, ammo_counts
         )

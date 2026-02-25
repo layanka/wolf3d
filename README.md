@@ -38,6 +38,7 @@ Runtime shell data sources:
 - `A/D`: strafe left/right
 - `Left/Right` or `Q/E`: rotate
 - `Tab`: toggle mouse-look and cursor capture
+- `Mouse wheel` or `[` `]`: cycle through unlocked weapons
 - `Space`: open/close door in front of you
 - `F` or left mouse click: shoot
 - `X`: interact with mission objectives (extraction, consoles, beacon)

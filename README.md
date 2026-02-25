@@ -36,6 +36,7 @@ Runtime shell data sources:
 
 - `W/S` or `Up/Down`: move forward/backward
 - `A/D`: strafe left/right
+- `Left Shift`/`Right Shift`: sprint (consumes stamina, auto-recovers)
 - `Left/Right` or `Q/E`: rotate
 - `Tab`: toggle mouse-look and cursor capture
 - `Mouse wheel` or `[` `]`: cycle through unlocked weapons

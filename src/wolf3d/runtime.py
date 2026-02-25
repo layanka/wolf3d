@@ -28,6 +28,11 @@ from src.wolf3d.world.simulation import WorldSimulation
 
 INTERACT_RANGE = 0.7
 MAX_PLAYER_HEALTH = 100
+STAMINA_MAX = 100.0
+SPRINT_SPEED_MULT = 1.55
+SPRINT_DRAIN_PER_SECOND = 40.0
+STAMINA_RECOVER_PER_SECOND = 26.0
+MIN_STAMINA_TO_SPRINT = 6.0
 
 
 @dataclass
@@ -77,6 +82,7 @@ class RunCheckpoint:
     level_kills: int
     level_title: str
     difficulty_id: str
+    stamina: float
 
 
 DIFFICULTY_PROFILES: dict[str, DifficultyProfile] = {
@@ -275,6 +281,7 @@ def draw_help_overlay(surface: pygame.Surface, font: pygame.font.Font) -> None:
     lines = [
         "Controls",
         "WASD / Arrows: move and strafe",
+        "Hold Shift: sprint (uses stamina)",
         "Q/E or Left/Right: turn",
         "TAB: toggle mouse-look",
         "F or Left Click: fire",
@@ -410,6 +417,7 @@ def build_checkpoint(
     level_kills: int,
     level_title: str,
     difficulty_id: str,
+    stamina: float,
 ) -> RunCheckpoint:
     return RunCheckpoint(
         level_idx=level_idx,
@@ -433,6 +441,7 @@ def build_checkpoint(
         level_kills=level_kills,
         level_title=level_title,
         difficulty_id=difficulty_id,
+        stamina=stamina,
     )
 
 
@@ -489,6 +498,7 @@ def run_runtime(smoke_test: bool = False, data_root: Path | None = None) -> None
     paused = False
     mouse_look = False
     mouse_sensitivity = 0.0028
+    stamina = STAMINA_MAX
 
     level_idx = 0
     objective_state = build_objective_state(campaign[level_idx].id)
@@ -606,6 +616,7 @@ def run_runtime(smoke_test: bool = False, data_root: Path | None = None) -> None
                         level_kills = checkpoint.level_kills
                         level_title = checkpoint.level_title
                         difficulty = DIFFICULTY_PROFILES.get(checkpoint.difficulty_id, DIFFICULTY_PROFILES["normal"])
+                        stamina = checkpoint.stamina
                         show_briefing = False
                     else:
                         world, player, enemies, pickups, ammo_pickups, health_pickups, level_title = load_level_state(level_idx)
@@ -615,6 +626,7 @@ def run_runtime(smoke_test: bool = False, data_root: Path | None = None) -> None
                         objective_state = build_objective_state(campaign[level_idx].id)
                         level_elapsed = 0.0
                         level_kills = 0
+                        stamina = STAMINA_MAX
                     player_dead = False
                     campaign_complete = False
                     dry_fire_timer = 0.0
@@ -639,6 +651,7 @@ def run_runtime(smoke_test: bool = False, data_root: Path | None = None) -> None
                     ammo_counts = default_ammo_counts(difficulty.ammo_gain_mult)
                     dry_fire_timer = 0.0
                     heal_flash_timer = 0.0
+                    stamina = STAMINA_MAX
                     checkpoint = None
                     checkpoint_notice_timer = 0.0
                 elif event.key == pygame.K_F1:
@@ -663,12 +676,21 @@ def run_runtime(smoke_test: bool = False, data_root: Path | None = None) -> None
         )
         strafe = float(keys[pygame.K_d]) - float(keys[pygame.K_a])
         turn = float(keys[pygame.K_RIGHT]) - float(keys[pygame.K_LEFT])
+        wants_sprint = bool(keys[pygame.K_LSHIFT] or keys[pygame.K_RSHIFT])
         if keys[pygame.K_q]:
             turn -= 1.0
         if keys[pygame.K_e]:
             turn += 1.0
 
         simulation_active = not paused and not show_briefing and not player_dead and not campaign_complete
+        moving = abs(forward) > 0.01 or abs(strafe) > 0.01
+        can_sprint = simulation_active and moving and wants_sprint and stamina > MIN_STAMINA_TO_SPRINT
+        is_sprinting = can_sprint
+
+        base_speed = player.move_speed
+        if is_sprinting:
+            player.move_speed = base_speed * SPRINT_SPEED_MULT
+
         player.angle += 0.0 if (player_dead or campaign_complete or paused) else turn * player.turn_speed * dt
         if simulation_active:
             campaign_elapsed += dt
@@ -676,6 +698,13 @@ def run_runtime(smoke_test: bool = False, data_root: Path | None = None) -> None
         world.update_doors(player, 0.0 if paused else dt)
         if not player_dead and not campaign_complete and not paused:
             world.move_player(player, forward, strafe, dt)
+        player.move_speed = base_speed
+
+        if simulation_active:
+            if is_sprinting:
+                stamina = max(0.0, stamina - SPRINT_DRAIN_PER_SECOND * dt)
+            else:
+                stamina = min(STAMINA_MAX, stamina + STAMINA_RECOVER_PER_SECOND * dt)
         melee_damage = 0
         spawned_projectiles: list[ProjectileState] = []
         if simulation_active:
@@ -763,6 +792,7 @@ def run_runtime(smoke_test: bool = False, data_root: Path | None = None) -> None
                 level_kills=level_kills,
                 level_title=level_title,
                 difficulty_id=difficulty.id,
+                stamina=stamina,
             )
             checkpoint_notice_timer = 1.0
 
@@ -898,6 +928,9 @@ def run_runtime(smoke_test: bool = False, data_root: Path | None = None) -> None
         if shots_fired > 0:
             accuracy = int((shots_hit / shots_fired) * 100)
             hud_lines.append(f"Accuracy: {accuracy}%")
+        hud_lines.append(f"Stamina: {int(stamina)}%")
+        if simulation_active and is_sprinting:
+            hud_lines.append("Sprinting")
         hud_lines.append(f"Ammo ({ammo_type}): {ammo_counts.get(ammo_type, 0)}")
         hud_lines.append(
             f"Reserves L/S/R: {ammo_counts.get('light', 0)}/{ammo_counts.get('shell', 0)}/{ammo_counts.get('rifle', 0)}"

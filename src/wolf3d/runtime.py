@@ -5,6 +5,7 @@ import os
 import pickle
 import random
 import json
+import time
 from copy import deepcopy
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -58,6 +59,7 @@ MOUSE_SENSITIVITY_STEP = 0.0003
 AUDIO_VOLUME_MIN = 0.0
 AUDIO_VOLUME_MAX = 1.0
 AUDIO_VOLUME_STEP = 0.08
+SETTINGS_WRITE_INTERVAL_SECONDS = 0.25
 CROSSHAIR_BASE_RADIUS = 4
 CROSSHAIR_MAX_BLOOM = 9
 HITMARKER_RADIUS = 8
@@ -616,6 +618,22 @@ def load_runtime_settings(project_root: Path) -> dict[str, object]:
     return raw if isinstance(raw, dict) else {}
 
 
+def _setting_float(raw: dict[str, object], key: str, default: float) -> float:
+    value = raw.get(key, default)
+    try:
+        return float(value)
+    except (TypeError, ValueError):
+        return default
+
+
+def _setting_int(raw: dict[str, object], key: str, default: int) -> int:
+    value = raw.get(key, default)
+    try:
+        return int(value)
+    except (TypeError, ValueError):
+        return default
+
+
 def save_runtime_settings(
     project_root: Path,
     mouse_sensitivity: float,
@@ -712,7 +730,7 @@ def run_runtime(smoke_test: bool = False, data_root: Path | None = None, quicklo
     fov = math.radians(BASE_FOV_DEG)
     show_minimap = bool(settings.get("show_minimap", True))
     minimap_scale_levels = (6, 8, 12)
-    minimap_scale_idx = int(settings.get("minimap_scale_idx", 1))
+    minimap_scale_idx = _setting_int(settings, "minimap_scale_idx", 1)
     minimap_scale_idx = max(0, min(len(minimap_scale_levels) - 1, minimap_scale_idx))
     shot_cooldown = 0.0
     current_weapon_idx = 0
@@ -749,9 +767,9 @@ def run_runtime(smoke_test: bool = False, data_root: Path | None = None, quicklo
     show_perf_hud = bool(settings.get("show_perf_hud", False))
     paused = False
     mouse_look = False
-    loaded_sens = float(settings.get("mouse_sensitivity", 0.0028))
+    loaded_sens = _setting_float(settings, "mouse_sensitivity", 0.0028)
     mouse_sensitivity = max(MOUSE_SENSITIVITY_MIN, min(MOUSE_SENSITIVITY_MAX, loaded_sens))
-    loaded_audio_volume = float(settings.get("audio_volume", 1.0))
+    loaded_audio_volume = _setting_float(settings, "audio_volume", 1.0)
     audio_volume = max(AUDIO_VOLUME_MIN, min(AUDIO_VOLUME_MAX, loaded_audio_volume))
     audio_muted = bool(settings.get("audio_muted", False))
     audio.set_master_volume(0.0 if audio_muted else audio_volume)
@@ -765,9 +783,13 @@ def run_runtime(smoke_test: bool = False, data_root: Path | None = None, quicklo
     level_idx = 0
     objective_state = build_objective_state(campaign[level_idx].id)
 
-    def persist_runtime_settings() -> None:
-        _ = save_runtime_settings(
-            project_root,
+    settings_last_write_at = 0.0
+    settings_pending = False
+    settings_last_snapshot: tuple[float, bool, int, float, bool, bool, str] | None = None
+
+    def persist_runtime_settings(force: bool = False) -> None:
+        nonlocal settings_last_write_at, settings_pending, settings_last_snapshot
+        snapshot = (
             mouse_sensitivity,
             show_minimap,
             minimap_scale_idx,
@@ -776,6 +798,26 @@ def run_runtime(smoke_test: bool = False, data_root: Path | None = None, quicklo
             show_perf_hud,
             difficulty.id,
         )
+        if settings_last_snapshot == snapshot and not settings_pending:
+            return
+        settings_pending = True
+        now = time.monotonic()
+        if not force and (now - settings_last_write_at) < SETTINGS_WRITE_INTERVAL_SECONDS:
+            return
+        saved = save_runtime_settings(
+            project_root,
+            snapshot[0],
+            snapshot[1],
+            snapshot[2],
+            snapshot[3],
+            snapshot[4],
+            snapshot[5],
+            snapshot[6],
+        )
+        if saved:
+            settings_last_snapshot = snapshot
+            settings_last_write_at = now
+            settings_pending = False
 
     def load_level_state(
         index: int,
@@ -981,7 +1023,8 @@ def run_runtime(smoke_test: bool = False, data_root: Path | None = None, quicklo
                             checkpoint_notice_timer = 1.0
                 elif event.key == pygame.K_F11:
                     deleted = delete_checkpoint_from_disk(project_root)
-                    checkpoint_notice_text = "Quick-save deleted" if deleted else "No quick-save to delete"
+                    checkpoint = None
+                    checkpoint_notice_text = "Quick-save deleted" if deleted else "Checkpoint cleared"
                     checkpoint_notice_timer = 1.0
                 elif event.key == pygame.K_RETURN:
                     if show_briefing:
@@ -1343,6 +1386,7 @@ def run_runtime(smoke_test: bool = False, data_root: Path | None = None, quicklo
         heal_flash_timer = max(0.0, heal_flash_timer - decay_dt)
         checkpoint_notice_timer = max(0.0, checkpoint_notice_timer - decay_dt)
         settings_notice_timer = max(0.0, settings_notice_timer - decay_dt)
+        persist_runtime_settings()
         was_reloading = reload_timer > 0.0
         reload_timer = max(0.0, reload_timer - decay_dt)
         if was_reloading and reload_timer <= 0.0 and reload_weapon_id is not None:
@@ -1632,4 +1676,5 @@ def run_runtime(smoke_test: bool = False, data_root: Path | None = None, quicklo
 
     pygame.event.set_grab(False)
     pygame.mouse.set_visible(True)
+    persist_runtime_settings(force=True)
     pygame.quit()

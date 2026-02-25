@@ -410,6 +410,7 @@ def draw_help_overlay(surface: pygame.Surface, font: pygame.font.Font) -> None:
         "F1/F2/F3: difficulty",
         "F6: toggle perf HUD",
         "F7: toggle debug HUD details",
+        "F8: toggle HUD",
         "H: toggle help",
         "P: pause/resume",
         "Q (while paused): quit (confirm)",
@@ -419,7 +420,7 @@ def draw_help_overlay(surface: pygame.Surface, font: pygame.font.Font) -> None:
     max_lines = max(1, (surface.get_height() - 24) // line_height)
     for idx, line in enumerate(lines[:max_lines]):
         color = (245, 210, 120) if idx == 0 else (225, 225, 230)
-        text_surface = font.render(line, True, color)
+        text_surface = font.render(line, False, color)
         surface.blit(text_surface, (18, 22 + idx * line_height))
 
 
@@ -434,7 +435,7 @@ def run_startup_menu(
     difficulty_ids = ("easy", "normal", "hard")
     selected_difficulty = initial_difficulty_id if initial_difficulty_id in difficulty_ids else "normal"
     show_controls = False
-    title_font = pygame.font.Font(None, 24)
+    title_font = pygame.font.Font(None, 30)
 
     while True:
         dt = min(clock.tick(60) / 1000.0, 0.05)
@@ -466,7 +467,7 @@ def run_startup_menu(
             (26, 32, 42),
             (0, surface.get_height() // 2, surface.get_width(), surface.get_height() // 2),
         )
-        title = title_font.render("Operation Iron Corridor", True, (240, 220, 150))
+        title = title_font.render("Operation Iron Corridor", False, (240, 220, 150))
         surface.blit(title, (surface.get_width() // 2 - title.get_width() // 2, 22))
 
         menu_lines = [
@@ -478,7 +479,7 @@ def run_startup_menu(
         ]
         for idx, line in enumerate(menu_lines):
             color = (228, 228, 235) if idx != 1 or has_quicksave else (145, 145, 155)
-            text = font.render(line, True, color)
+            text = font.render(line, False, color)
             surface.blit(text, (28, 72 + idx * 16))
 
         if show_controls:
@@ -887,7 +888,7 @@ def run_runtime(smoke_test: bool = False, data_root: Path | None = None, quicklo
     internal_w, internal_h = 320, 200
     screen = pygame.display.set_mode((screen_w, screen_h))
     surface = pygame.Surface((internal_w, internal_h))
-    font = pygame.font.Font(None, 12)
+    font = pygame.font.Font(None, 16)
     audio = RuntimeAudioManager(project_root)
     clock = pygame.time.Clock()
     pygame.display.set_caption("Wolf3D Real Runtime (Campaign Shell)")
@@ -955,6 +956,7 @@ def run_runtime(smoke_test: bool = False, data_root: Path | None = None, quicklo
     show_help = False
     show_perf_hud = bool(settings.get("show_perf_hud", False))
     show_debug_hud = False
+    show_hud = True
     paused = False
     pause_quit_confirm_timer = 0.0
     campaign_restart_confirm_timer = 0.0
@@ -1257,6 +1259,10 @@ def run_runtime(smoke_test: bool = False, data_root: Path | None = None, quicklo
                 elif event.key == pygame.K_F7:
                     show_debug_hud = not show_debug_hud
                     settings_notice_text = "Debug HUD: on" if show_debug_hud else "Debug HUD: off"
+                    settings_notice_timer = 1.0
+                elif event.key == pygame.K_F8:
+                    show_hud = not show_hud
+                    settings_notice_text = "HUD: shown" if show_hud else "HUD: hidden"
                     settings_notice_timer = 1.0
                 elif event.key == pygame.K_p:
                     paused = not paused
@@ -2025,13 +2031,15 @@ def run_runtime(smoke_test: bool = False, data_root: Path | None = None, quicklo
         objective_hint_node = nearest_objective_node(player, objective_state)
         if objective_hint_node is not None:
             hud_lines.append(objective_interact_hint(objective_hint_node, objective_state, enemies))
+        if show_briefing or not show_hud:
+            hud_lines = []
         hud_line_height = 8
         max_hud_lines = max(6, (internal_h - 8) // hud_line_height)
         if len(hud_lines) > max_hud_lines:
             hud_lines = [hud_lines[0]] + hud_lines[-(max_hud_lines - 1) :]
         for i, line in enumerate(hud_lines):
             color = (245, 210, 120) if "Level clear" in line else (220, 220, 225)
-            hud_surface = font.render(line, True, color)
+            hud_surface = font.render(line, False, color)
             surface.blit(hud_surface, (6, 4 + i * hud_line_height))
 
         objective_delta = objective_direction_delta(player, current_objective_target(objective_state, enemies))
@@ -2123,43 +2131,43 @@ def run_runtime(smoke_test: bool = False, data_root: Path | None = None, quicklo
             overlay = pygame.Surface((internal_w, internal_h), pygame.SRCALPHA)
             overlay.fill((8, 8, 12, 190))
             surface.blit(overlay, (0, 0))
-            title_surface = font.render(level_title, True, (245, 210, 120))
-            deploy_surface = font.render("Press ENTER to deploy", True, (245, 210, 120))
+            title_surface = font.render(level_title, False, (245, 210, 120))
+            deploy_surface = font.render("Press ENTER to deploy", False, (245, 210, 120))
             briefing_lines = wrap_text(campaign[level_idx].briefing, font, internal_w - 32)
             win_lines = wrap_text(level_win_condition, font, internal_w - 32)
             surface.blit(title_surface, (16, 70))
             cursor_y = 84
             for line in briefing_lines[:5]:
-                surface.blit(font.render(line, True, (232, 232, 236)), (16, cursor_y))
+                surface.blit(font.render(line, False, (232, 232, 236)), (16, cursor_y))
                 cursor_y += 10
             for line in win_lines[:3]:
-                surface.blit(font.render(line, True, (218, 226, 188)), (16, cursor_y))
+                surface.blit(font.render(line, False, (218, 226, 188)), (16, cursor_y))
                 cursor_y += 10
             surface.blit(deploy_surface, (16, min(internal_h - 12, cursor_y + 4)))
         elif player_dead:
             overlay = pygame.Surface((internal_w, internal_h), pygame.SRCALPHA)
             overlay.fill((18, 2, 2, 170))
             surface.blit(overlay, (0, 0))
-            dead_surface = font.render("MISSION FAILED", True, (235, 125, 125))
+            dead_surface = font.render("MISSION FAILED", False, (235, 125, 125))
             retry_text = "Press R to restore checkpoint" if checkpoint is not None and checkpoint.level_idx == level_idx else "Press R to retry this level"
-            retry_surface = font.render(retry_text, True, (235, 210, 160))
+            retry_surface = font.render(retry_text, False, (235, 210, 160))
             surface.blit(dead_surface, (16, 86))
             surface.blit(retry_surface, (16, 102))
         elif campaign_complete:
             overlay = pygame.Surface((internal_w, internal_h), pygame.SRCALPHA)
             overlay.fill((6, 18, 10, 170))
             surface.blit(overlay, (0, 0))
-            win_surface = font.render("MISSION COMPLETE", True, (145, 235, 165))
+            win_surface = font.render("MISSION COMPLETE", False, (145, 235, 165))
             acc = int((shots_hit / shots_fired) * 100) if shots_fired > 0 else 0
             stats_surface = font.render(
                 f"Stats: time {format_duration(campaign_elapsed)} | kills {kills_total} | acc {acc}%",
-                True,
+                False,
                 (225, 235, 185),
             )
             restart_text = (
                 "Press N again to confirm restart" if campaign_restart_confirm_timer > 0.0 else "Press N to restart campaign"
             )
-            restart_surface = font.render(restart_text, True, (235, 235, 185))
+            restart_surface = font.render(restart_text, False, (235, 235, 185))
             surface.blit(win_surface, (16, 86))
             surface.blit(stats_surface, (16, 102))
             surface.blit(restart_surface, (16, 118))
@@ -2167,12 +2175,12 @@ def run_runtime(smoke_test: bool = False, data_root: Path | None = None, quicklo
             overlay = pygame.Surface((internal_w, internal_h), pygame.SRCALPHA)
             overlay.fill((8, 10, 14, 165))
             surface.blit(overlay, (0, 0))
-            paused_surface = font.render("PAUSED", True, (240, 220, 150))
-            resume_surface = font.render("P: continue | Q: quit", True, (230, 230, 220))
+            paused_surface = font.render("PAUSED", False, (240, 220, 150))
+            resume_surface = font.render("P: continue | Q: quit", False, (230, 230, 220))
             surface.blit(paused_surface, (16, 86))
             surface.blit(resume_surface, (16, 102))
             if pause_quit_confirm_timer > 0.0:
-                confirm_surface = font.render("Press Q again to confirm quit", True, (245, 205, 160))
+                confirm_surface = font.render("Press Q again to confirm quit", False, (245, 205, 160))
                 surface.blit(confirm_surface, (16, 118))
 
         if damage_flash_timer > 0.0:

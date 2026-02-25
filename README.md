@@ -52,6 +52,7 @@ Runtime shell data sources:
 - `F10`: mute/unmute audio
 - `F6`: toggle performance HUD (FPS/frame-time/counters)
 - `F7`: toggle debug HUD details (player coords/angle)
+- `F8`: hide/show gameplay HUD text
 - `Mouse wheel` or `[` `]`: cycle through unlocked weapons
 - `Space`: open/close door in front of you
 - `F` or left mouse click: shoot

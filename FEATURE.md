@@ -61,11 +61,11 @@ Living feature backlog for the full game (post-PoC), with sprint IDs, status, or
   - Accept: hit enemies react differently by archetype; behavior is readable and fair.
 - `FS-015` `done`: Enemy archetype depth pass (distinct attack timings, preferred ranges, path pressure).
   - Accept: guard/assault/hound/commander feel tactically distinct.
-- `FS-016` `next`: Projectile/combat polish (impact VFX differentiation, near-miss cue, damage direction hint).
+- `FS-016` `done`: Projectile/combat polish (impact VFX differentiation, near-miss cue, damage direction hint).
   - Accept: player can infer incoming threat direction and impact type.
 
 ### Planned: Weapons and Items
-- `FS-017` `planned`: Weapon personality pass (per-weapon recoil curves, reload interrupt policy, swap timings).
+- `FS-017` `next`: Weapon personality pass (per-weapon recoil curves, reload interrupt policy, swap timings).
   - Accept: each weapon has unique handling profile without balance breaks.
 - `FS-018` `planned`: Secondary fire prototype for one weapon.
   - Accept: alternate mode implemented, documented, and balanced enough for playtest.

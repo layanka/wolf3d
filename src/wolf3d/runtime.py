@@ -66,6 +66,8 @@ HITMARKER_RADIUS = 8
 KILLMARKER_RADIUS = 11
 OBJECTIVE_ARROW_Y = 16
 OBJECTIVE_ARROW_SIZE = 6
+NEAR_MISS_TIMER_SECONDS = 0.22
+DAMAGE_DIR_TIMER_SECONDS = 0.4
 
 
 @dataclass
@@ -336,7 +338,11 @@ def render_projectiles(
 
         size = max(1, min(5, int(7 / (distance + 0.2))))
         y = view_center_y
-        color = (250, 130, 70)
+        if projectile.damage >= 18:
+            color = (255, 190, 90)
+            size = min(6, size + 1)
+        else:
+            color = (250, 130, 70)
         pygame.draw.circle(surface, color, (screen_x, y), size)
 
 
@@ -755,6 +761,12 @@ def run_runtime(smoke_test: bool = False, data_root: Path | None = None, quicklo
     weapon_fx_timer = 0.0
     weapon_fx_id = weapon_cycle[0]
     damage_flash_timer = 0.0
+    melee_hit_flash_timer = 0.0
+    projectile_hit_flash_timer = 0.0
+    near_miss_timer = 0.0
+    near_miss_angle: float | None = None
+    damage_direction_timer = 0.0
+    damage_direction_angle: float | None = None
     hit_confirm_timer = 0.0
     kill_confirm_timer = 0.0
     campaign_elapsed = 0.0
@@ -879,6 +891,8 @@ def run_runtime(smoke_test: bool = False, data_root: Path | None = None, quicklo
         nonlocal shots_fired, shots_hit, kills_total, level_kills, level_title
         nonlocal difficulty, stamina, sprint_exhausted, sprint_blend, show_briefing, player_dead, campaign_complete
         nonlocal dry_fire_timer, heal_flash_timer, paused, reload_timer, reload_weapon_id, step_timer, view_bob_phase, recoil_bloom
+        nonlocal melee_hit_flash_timer, projectile_hit_flash_timer, near_miss_timer, near_miss_angle
+        nonlocal damage_direction_timer, damage_direction_angle
         nonlocal checkpoint_notice_timer, checkpoint_notice_text, settings_notice_timer, settings_notice_text, kill_confirm_timer
 
         if checkpoint is None:
@@ -918,6 +932,12 @@ def run_runtime(smoke_test: bool = False, data_root: Path | None = None, quicklo
         dry_fire_timer = 0.0
         heal_flash_timer = 0.0
         kill_confirm_timer = 0.0
+        melee_hit_flash_timer = 0.0
+        projectile_hit_flash_timer = 0.0
+        near_miss_timer = 0.0
+        near_miss_angle = None
+        damage_direction_timer = 0.0
+        damage_direction_angle = None
         paused = False
         step_timer = 0.0
         view_bob_phase = 0.0
@@ -1079,6 +1099,12 @@ def run_runtime(smoke_test: bool = False, data_root: Path | None = None, quicklo
                     dry_fire_timer = 0.0
                     heal_flash_timer = 0.0
                     kill_confirm_timer = 0.0
+                    melee_hit_flash_timer = 0.0
+                    projectile_hit_flash_timer = 0.0
+                    near_miss_timer = 0.0
+                    near_miss_angle = None
+                    damage_direction_timer = 0.0
+                    damage_direction_angle = None
                     step_timer = 0.0
                     view_bob_phase = 0.0
                     recoil_bloom = 0.0
@@ -1108,6 +1134,12 @@ def run_runtime(smoke_test: bool = False, data_root: Path | None = None, quicklo
                     dry_fire_timer = 0.0
                     heal_flash_timer = 0.0
                     kill_confirm_timer = 0.0
+                    melee_hit_flash_timer = 0.0
+                    projectile_hit_flash_timer = 0.0
+                    near_miss_timer = 0.0
+                    near_miss_angle = None
+                    damage_direction_timer = 0.0
+                    damage_direction_angle = None
                     stamina = STAMINA_MAX
                     sprint_exhausted = False
                     sprint_blend = 0.0
@@ -1203,11 +1235,33 @@ def run_runtime(smoke_test: bool = False, data_root: Path | None = None, quicklo
         if spawned_projectiles:
             active_projectiles.extend(spawned_projectiles)
 
-        active_projectiles, projectile_damage = update_projectiles(world, player, active_projectiles, 0.0 if paused else dt)
+        active_projectiles, projectile_damage, near_miss, near_miss_hit_angle, projectile_hit_angle = update_projectiles(
+            world, player, active_projectiles, 0.0 if paused else dt
+        )
         enemy_damage_scale = (1.0 + level_idx * 0.2) * difficulty.damage_mult
-        scaled_damage = int(math.ceil((melee_damage + projectile_damage) * enemy_damage_scale))
+        scaled_melee_damage = int(math.ceil(melee_damage * enemy_damage_scale))
+        scaled_projectile_damage = int(math.ceil(projectile_damage * enemy_damage_scale))
+        scaled_damage = scaled_melee_damage + scaled_projectile_damage
         if scaled_damage > 0:
             damage_flash_timer = 0.17
+        if scaled_melee_damage > 0:
+            melee_hit_flash_timer = 0.13
+        if scaled_projectile_damage > 0:
+            projectile_hit_flash_timer = 0.18
+            damage_direction_timer = DAMAGE_DIR_TIMER_SECONDS
+            damage_direction_angle = projectile_hit_angle
+        elif scaled_melee_damage > 0 and enemies:
+            nearest_enemy = min(
+                (enemy for enemy in enemies if enemy.alive),
+                key=lambda e: (e.x - player.x) ** 2 + (e.y - player.y) ** 2,
+                default=None,
+            )
+            if nearest_enemy is not None:
+                damage_direction_angle = math.atan2(nearest_enemy.y - player.y, nearest_enemy.x - player.x)
+                damage_direction_timer = DAMAGE_DIR_TIMER_SECONDS * 0.65
+        if near_miss and near_miss_timer <= 0.0:
+            near_miss_timer = NEAR_MISS_TIMER_SECONDS
+            near_miss_angle = near_miss_hit_angle
         player.health = max(0, player.health - scaled_damage)
         player_dead = player.health <= 0
 
@@ -1392,6 +1446,10 @@ def run_runtime(smoke_test: bool = False, data_root: Path | None = None, quicklo
         shot_cooldown = max(0.0, shot_cooldown - decay_dt)
         weapon_fx_timer = max(0.0, weapon_fx_timer - decay_dt)
         damage_flash_timer = max(0.0, damage_flash_timer - decay_dt)
+        melee_hit_flash_timer = max(0.0, melee_hit_flash_timer - decay_dt)
+        projectile_hit_flash_timer = max(0.0, projectile_hit_flash_timer - decay_dt)
+        near_miss_timer = max(0.0, near_miss_timer - decay_dt)
+        damage_direction_timer = max(0.0, damage_direction_timer - decay_dt)
         hit_confirm_timer = max(0.0, hit_confirm_timer - decay_dt)
         kill_confirm_timer = max(0.0, kill_confirm_timer - decay_dt)
         recoil_bloom = max(0.0, recoil_bloom - RECOIL_BLOOM_DECAY_PER_SECOND * decay_dt)
@@ -1426,6 +1484,12 @@ def run_runtime(smoke_test: bool = False, data_root: Path | None = None, quicklo
                 level_elapsed = 0.0
                 level_kills = 0
                 kill_confirm_timer = 0.0
+                melee_hit_flash_timer = 0.0
+                projectile_hit_flash_timer = 0.0
+                near_miss_timer = 0.0
+                near_miss_angle = None
+                damage_direction_timer = 0.0
+                damage_direction_angle = None
                 sprint_exhausted = False
                 sprint_blend = 0.0
                 step_timer = 0.0
@@ -1497,6 +1561,17 @@ def run_runtime(smoke_test: bool = False, data_root: Path | None = None, quicklo
         hud_lines.append(objective_status_line(objective_state, enemies))
         if active_projectiles:
             hud_lines.append(f"Incoming: {len(active_projectiles)}")
+        if near_miss_timer > 0.0:
+            hud_lines.append("Near miss")
+        if damage_direction_timer > 0.0 and damage_direction_angle is not None:
+            damage_delta = normalize_angle(damage_direction_angle - player.angle)
+            if abs(damage_delta) < 0.2:
+                damage_hint = "front"
+            elif damage_delta > 0.0:
+                damage_hint = "right"
+            else:
+                damage_hint = "left"
+            hud_lines.append(f"Damage direction: {damage_hint}")
         if level_idx > 0:
             hud_lines.append(f"Threat scale: x{1.0 + level_idx * 0.2:.1f}")
         if hit_confirm_timer > 0.0:
@@ -1565,6 +1640,19 @@ def run_runtime(smoke_test: bool = False, data_root: Path | None = None, quicklo
             left = (indicator_x - OBJECTIVE_ARROW_SIZE, OBJECTIVE_ARROW_Y + OBJECTIVE_ARROW_SIZE)
             right = (indicator_x + OBJECTIVE_ARROW_SIZE, OBJECTIVE_ARROW_Y + OBJECTIVE_ARROW_SIZE)
             pygame.draw.polygon(surface, arrow_color, (top, left, right), 1)
+        if damage_direction_timer > 0.0 and damage_direction_angle is not None:
+            damage_delta = normalize_angle(damage_direction_angle - player.angle)
+            impact_x = internal_w // 2 + int((damage_delta / (fov / 2.0)) * (internal_w * 0.28))
+            impact_x = max(8, min(internal_w - 8, impact_x))
+            color = (255, 120, 90)
+            pygame.draw.line(surface, color, (impact_x - 4, 6), (impact_x, 12), 1)
+            pygame.draw.line(surface, color, (impact_x + 4, 6), (impact_x, 12), 1)
+        if near_miss_timer > 0.0 and near_miss_angle is not None:
+            miss_delta = normalize_angle(near_miss_angle - player.angle)
+            miss_x = internal_w // 2 + int((miss_delta / (fov / 2.0)) * (internal_w * 0.28))
+            miss_x = max(8, min(internal_w - 8, miss_x))
+            color = (120, 210, 255)
+            pygame.draw.line(surface, color, (miss_x - 3, 5), (miss_x + 3, 5), 1)
 
         cx, cy = internal_w // 2, view_center_y
         if reload_timer > 0.0 and reload_weapon_id == active_weapon.id:

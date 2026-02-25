@@ -116,6 +116,7 @@ Expected visuals:
 - HUD now includes a top-screen objective compass arrow
 - Enemy hit reactions now include short stagger/suppression windows by archetype
 - Enemy archetypes now hold distinct preferred ranges and attack pressure/cadence patterns
+- Projectile feedback now includes near-miss cue and directional damage indicators
 - Crosshair now turns red when an enemy is in direct line of fire
 - HUD/briefing now display each level's campaign goal text (`win_condition`)
 

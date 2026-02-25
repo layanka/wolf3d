@@ -14,10 +14,14 @@ def update_projectiles(
     player: PlayerState,
     projectiles: list[ProjectileState],
     dt: float,
-) -> tuple[list[ProjectileState], int]:
-    """Advance projectiles and return survivors plus damage applied to player."""
+) -> tuple[list[ProjectileState], int, bool, float | None, float | None]:
+    """Advance projectiles and return survivors, damage, near-miss, and impact bearings."""
     survivors: list[ProjectileState] = []
     damage_to_player = 0
+    near_miss = False
+    near_miss_angle: float | None = None
+    hit_angle: float | None = None
+    nearest_miss_sq = float("inf")
 
     for projectile in projectiles:
         travel = projectile.speed * dt
@@ -44,15 +48,21 @@ def update_projectiles(
 
             dx = projectile.x - player.x
             dy = projectile.y - player.y
-            if dx * dx + dy * dy <= PLAYER_HIT_RADIUS * PLAYER_HIT_RADIUS:
+            distance_sq = dx * dx + dy * dy
+            if distance_sq <= PLAYER_HIT_RADIUS * PLAYER_HIT_RADIUS:
                 damage_to_player += projectile.damage
+                hit_angle = math.atan2(-dy, -dx)
                 alive = False
                 break
+            if distance_sq <= (PLAYER_HIT_RADIUS * 1.7) ** 2 and distance_sq < nearest_miss_sq:
+                nearest_miss_sq = distance_sq
+                near_miss = True
+                near_miss_angle = math.atan2(-dy, -dx)
 
         if alive:
             survivors.append(projectile)
 
-    return survivors, damage_to_player
+    return survivors, damage_to_player, near_miss, near_miss_angle, hit_angle
 
 
 def build_enemy_projectile(

@@ -136,6 +136,7 @@ Expected visuals:
 - Level pacing pass now differentiates encounter density and route shape across all 3 maps
 - Runtime starts with an in-game title/options shell (new run or continue quick-save)
 - Pause/quit and campaign-restart flows now require explicit confirmation for destructive transitions
+- Minimap rendering now caches static map tiles and draws only dynamic layers each frame
 
 Audio source and license notes:
 - [assets/audio/CREDITS.md](/Users/philippe.lefebvre2/Code/testing1/assets/audio/CREDITS.md)

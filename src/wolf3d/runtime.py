@@ -893,6 +893,7 @@ def run_runtime(smoke_test: bool = False, data_root: Path | None = None, quicklo
     minimap_scale_levels = (6, 8, 12)
     minimap_scale_idx = _setting_int(settings, "minimap_scale_idx", 1)
     minimap_scale_idx = max(0, min(len(minimap_scale_levels) - 1, minimap_scale_idx))
+    minimap_static_cache: dict[int, pygame.Surface] = {}
     shot_cooldown = 0.0
     current_weapon_idx = 0
     unlocked_weapons = {weapon_cycle[0]}
@@ -1085,6 +1086,24 @@ def run_runtime(smoke_test: bool = False, data_root: Path | None = None, quicklo
             campaign_level.win_condition,
         )
 
+    def clear_minimap_cache() -> None:
+        minimap_static_cache.clear()
+
+    def minimap_static_surface(scale: int) -> pygame.Surface:
+        cached = minimap_static_cache.get(scale)
+        if cached is not None:
+            return cached
+        pad = 6
+        static = pygame.Surface((internal_w, internal_h), pygame.SRCALPHA)
+        for y, row in enumerate(world.tile_map):
+            for x, tile in enumerate(row):
+                if tile == "2":
+                    continue
+                color = (55, 55, 60) if tile == "1" else (135, 135, 145)
+                pygame.draw.rect(static, color, (pad + x * scale, pad + y * scale, scale - 1, scale - 1))
+        minimap_static_cache[scale] = static
+        return static
+
     world, player, enemies, pickups, ammo_pickups, health_pickups, scripted_events, level_title, level_win_condition = load_level_state(level_idx)
     triggered_script_events: set[str] = set()
     script_notice_timer = 0.0
@@ -1109,6 +1128,7 @@ def run_runtime(smoke_test: bool = False, data_root: Path | None = None, quicklo
 
         level_idx = checkpoint.level_idx
         world = deepcopy(checkpoint.world)
+        clear_minimap_cache()
         player = deepcopy(checkpoint.player)
         enemies = deepcopy(checkpoint.enemies)
         pickups = deepcopy(checkpoint.pickups)
@@ -1323,6 +1343,7 @@ def run_runtime(smoke_test: bool = False, data_root: Path | None = None, quicklo
                             level_title,
                             level_win_condition,
                         ) = load_level_state(level_idx)
+                        clear_minimap_cache()
                         triggered_script_events.clear()
                         script_notice_timer = 0.0
                         script_notice_text = ""
@@ -1374,6 +1395,7 @@ def run_runtime(smoke_test: bool = False, data_root: Path | None = None, quicklo
                             level_title,
                             level_win_condition,
                         ) = load_level_state(level_idx)
+                        clear_minimap_cache()
                         triggered_script_events.clear()
                         script_notice_timer = 0.0
                         script_notice_text = ""
@@ -1789,6 +1811,7 @@ def run_runtime(smoke_test: bool = False, data_root: Path | None = None, quicklo
                     level_title,
                     level_win_condition,
                 ) = load_level_state(level_idx)
+                clear_minimap_cache()
                 triggered_script_events.clear()
                 script_notice_timer = 0.0
                 script_notice_text = ""
@@ -2020,17 +2043,12 @@ def run_runtime(smoke_test: bool = False, data_root: Path | None = None, quicklo
         if show_minimap:
             scale = minimap_scale_levels[minimap_scale_idx]
             pad = 6
-            for y, row in enumerate(world.tile_map):
-                for x, tile in enumerate(row):
-                    if tile == "1":
-                        c = (55, 55, 60)
-                    elif tile == "2":
-                        openness = world.doors[(x, y)].open_amount
-                        v = int(70 + openness * 150)
-                        c = (v, 120, 55)
-                    else:
-                        c = (135, 135, 145)
-                    pygame.draw.rect(surface, c, (pad + x * scale, pad + y * scale, scale - 1, scale - 1))
+            surface.blit(minimap_static_surface(scale), (0, 0))
+            for (x, y), door in world.doors.items():
+                openness = door.open_amount
+                v = int(70 + openness * 150)
+                c = (v, 120, 55)
+                pygame.draw.rect(surface, c, (pad + x * scale, pad + y * scale, scale - 1, scale - 1))
             px = int(pad + player.x * scale)
             py = int(pad + player.y * scale)
             pygame.draw.circle(surface, (30, 210, 80), (px, py), 2)

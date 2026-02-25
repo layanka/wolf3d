@@ -89,9 +89,9 @@ Living feature backlog for the full game (post-PoC), with sprint IDs, status, or
 ### Planned: Stabilization and Release Readiness
 - `FS-025` `done`: Test harness foundation (`tests/`) for loader/runtime pure logic paths.
   - Accept: CI-style deterministic checks for settings/save/load/contracts.
-- `FS-026` `next`: Performance pass (hotspot profiling, selective optimization).
+- `FS-026` `done`: Performance pass (hotspot profiling, selective optimization).
   - Accept: steady 60 FPS target on typical maps; bottlenecks documented.
-- `FS-027` `planned`: Documentation/release pack (controls matrix, feature list, known limits).
+- `FS-027` `next`: Documentation/release pack (controls matrix, feature list, known limits).
   - Accept: repo is handoff-ready for new sessions/contributors.
 
 ## Execution Order

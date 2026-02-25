@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import math
 import os
+from copy import deepcopy
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Literal
@@ -51,6 +52,30 @@ class DifficultyProfile:
     damage_mult: float
     ammo_gain_mult: float
     heal_gain_mult: float
+
+
+@dataclass
+class RunCheckpoint:
+    level_idx: int
+    world: WorldSimulation
+    player: PlayerState
+    enemies: list[EnemyState]
+    pickups: list[dict[str, float | str]]
+    ammo_pickups: list[dict[str, float | str]]
+    health_pickups: list[dict[str, float | str]]
+    objective_state: ObjectiveState
+    active_projectiles: list[ProjectileState]
+    shot_cooldown: float
+    current_weapon_idx: int
+    unlocked_weapons: set[str]
+    ammo_counts: dict[str, int]
+    campaign_elapsed: float
+    level_elapsed: float
+    shots_fired: int
+    shots_hit: int
+    kills_total: int
+    level_kills: int
+    level_title: str
 
 
 DIFFICULTY_PROFILES: dict[str, DifficultyProfile] = {
@@ -315,6 +340,52 @@ def choose_fallback_weapon(
     return current_idx
 
 
+def build_checkpoint(
+    level_idx: int,
+    world: WorldSimulation,
+    player: PlayerState,
+    enemies: list[EnemyState],
+    pickups: list[dict[str, float | str]],
+    ammo_pickups: list[dict[str, float | str]],
+    health_pickups: list[dict[str, float | str]],
+    objective_state: ObjectiveState,
+    active_projectiles: list[ProjectileState],
+    shot_cooldown: float,
+    current_weapon_idx: int,
+    unlocked_weapons: set[str],
+    ammo_counts: dict[str, int],
+    campaign_elapsed: float,
+    level_elapsed: float,
+    shots_fired: int,
+    shots_hit: int,
+    kills_total: int,
+    level_kills: int,
+    level_title: str,
+) -> RunCheckpoint:
+    return RunCheckpoint(
+        level_idx=level_idx,
+        world=deepcopy(world),
+        player=deepcopy(player),
+        enemies=deepcopy(enemies),
+        pickups=deepcopy(pickups),
+        ammo_pickups=deepcopy(ammo_pickups),
+        health_pickups=deepcopy(health_pickups),
+        objective_state=deepcopy(objective_state),
+        active_projectiles=deepcopy(active_projectiles),
+        shot_cooldown=shot_cooldown,
+        current_weapon_idx=current_weapon_idx,
+        unlocked_weapons=set(unlocked_weapons),
+        ammo_counts=dict(ammo_counts),
+        campaign_elapsed=campaign_elapsed,
+        level_elapsed=level_elapsed,
+        shots_fired=shots_fired,
+        shots_hit=shots_hit,
+        kills_total=kills_total,
+        level_kills=level_kills,
+        level_title=level_title,
+    )
+
+
 def run_runtime(smoke_test: bool = False, data_root: Path | None = None) -> None:
     if smoke_test:
         os.environ["SDL_VIDEODRIVER"] = "dummy"
@@ -362,6 +433,8 @@ def run_runtime(smoke_test: bool = False, data_root: Path | None = None) -> None
     ammo_counts = default_ammo_counts(difficulty.ammo_gain_mult)
     dry_fire_timer = 0.0
     heal_flash_timer = 0.0
+    checkpoint: RunCheckpoint | None = None
+    checkpoint_notice_timer = 0.0
 
     level_idx = 0
     objective_state = build_objective_state(campaign[level_idx].id)
@@ -412,6 +485,7 @@ def run_runtime(smoke_test: bool = False, data_root: Path | None = None) -> None
         fire_requested = False
         next_level_requested = False
         interact_requested = False
+        checkpoint_requested = False
 
         for event in pygame.event.get():
             if event.type == pygame.QUIT:
@@ -428,6 +502,8 @@ def run_runtime(smoke_test: bool = False, data_root: Path | None = None) -> None
                     fire_requested = True
                 elif event.key == pygame.K_x:
                     interact_requested = True
+                elif event.key == pygame.K_c:
+                    checkpoint_requested = True
                 elif event.key == pygame.K_RETURN:
                     if show_briefing:
                         show_briefing = False
@@ -442,16 +518,37 @@ def run_runtime(smoke_test: bool = False, data_root: Path | None = None) -> None
                 elif event.key == pygame.K_4 and len(weapon_cycle) >= 4 and weapon_cycle[3] in unlocked_weapons:
                     current_weapon_idx = 3
                 elif event.key == pygame.K_r and player_dead:
-                    world, player, enemies, pickups, ammo_pickups, health_pickups, level_title = load_level_state(level_idx)
-                    shot_cooldown = 0.0
-                    current_weapon_idx = 0
-                    show_briefing = True
+                    if checkpoint is not None and checkpoint.level_idx == level_idx:
+                        world = deepcopy(checkpoint.world)
+                        player = deepcopy(checkpoint.player)
+                        enemies = deepcopy(checkpoint.enemies)
+                        pickups = deepcopy(checkpoint.pickups)
+                        ammo_pickups = deepcopy(checkpoint.ammo_pickups)
+                        health_pickups = deepcopy(checkpoint.health_pickups)
+                        objective_state = deepcopy(checkpoint.objective_state)
+                        active_projectiles = deepcopy(checkpoint.active_projectiles)
+                        shot_cooldown = checkpoint.shot_cooldown
+                        current_weapon_idx = checkpoint.current_weapon_idx
+                        unlocked_weapons = set(checkpoint.unlocked_weapons)
+                        ammo_counts = dict(checkpoint.ammo_counts)
+                        campaign_elapsed = checkpoint.campaign_elapsed
+                        level_elapsed = checkpoint.level_elapsed
+                        shots_fired = checkpoint.shots_fired
+                        shots_hit = checkpoint.shots_hit
+                        kills_total = checkpoint.kills_total
+                        level_kills = checkpoint.level_kills
+                        level_title = checkpoint.level_title
+                        show_briefing = False
+                    else:
+                        world, player, enemies, pickups, ammo_pickups, health_pickups, level_title = load_level_state(level_idx)
+                        shot_cooldown = 0.0
+                        current_weapon_idx = 0
+                        show_briefing = True
+                        objective_state = build_objective_state(campaign[level_idx].id)
+                        level_elapsed = 0.0
+                        level_kills = 0
                     player_dead = False
                     campaign_complete = False
-                    active_projectiles.clear()
-                    objective_state = build_objective_state(campaign[level_idx].id)
-                    level_elapsed = 0.0
-                    level_kills = 0
                     dry_fire_timer = 0.0
                     heal_flash_timer = 0.0
                 elif event.key == pygame.K_n and campaign_complete:
@@ -474,6 +571,8 @@ def run_runtime(smoke_test: bool = False, data_root: Path | None = None) -> None
                     ammo_counts = default_ammo_counts(difficulty.ammo_gain_mult)
                     dry_fire_timer = 0.0
                     heal_flash_timer = 0.0
+                    checkpoint = None
+                    checkpoint_notice_timer = 0.0
                 elif event.key == pygame.K_F1:
                     difficulty = DIFFICULTY_PROFILES["easy"]
                 elif event.key == pygame.K_F2:
@@ -565,6 +664,30 @@ def run_runtime(smoke_test: bool = False, data_root: Path | None = None) -> None
 
         if interact_requested and not show_briefing and not player_dead and not campaign_complete:
             process_objective_interaction(player, objective_state, enemies)
+        if checkpoint_requested and not show_briefing and not player_dead and not campaign_complete:
+            checkpoint = build_checkpoint(
+                level_idx=level_idx,
+                world=world,
+                player=player,
+                enemies=enemies,
+                pickups=pickups,
+                ammo_pickups=ammo_pickups,
+                health_pickups=health_pickups,
+                objective_state=objective_state,
+                active_projectiles=active_projectiles,
+                shot_cooldown=shot_cooldown,
+                current_weapon_idx=current_weapon_idx,
+                unlocked_weapons=unlocked_weapons,
+                ammo_counts=ammo_counts,
+                campaign_elapsed=campaign_elapsed,
+                level_elapsed=level_elapsed,
+                shots_fired=shots_fired,
+                shots_hit=shots_hit,
+                kills_total=kills_total,
+                level_kills=level_kills,
+                level_title=level_title,
+            )
+            checkpoint_notice_timer = 1.0
 
         while weapon_cycle[current_weapon_idx] not in unlocked_weapons and current_weapon_idx > 0:
             current_weapon_idx -= 1
@@ -618,6 +741,7 @@ def run_runtime(smoke_test: bool = False, data_root: Path | None = None) -> None
         hit_confirm_timer = max(0.0, hit_confirm_timer - dt)
         dry_fire_timer = max(0.0, dry_fire_timer - dt)
         heal_flash_timer = max(0.0, heal_flash_timer - dt)
+        checkpoint_notice_timer = max(0.0, checkpoint_notice_timer - dt)
         level_cleared = objective_complete(objective_state, enemies)
         if level_cleared and not player_dead and next_level_requested:
             if level_idx < len(campaign) - 1:
@@ -635,6 +759,8 @@ def run_runtime(smoke_test: bool = False, data_root: Path | None = None) -> None
                     ammo_counts[ammo_type] = ammo_counts.get(ammo_type, 0) + amount
                 level_elapsed = 0.0
                 level_kills = 0
+                checkpoint = None
+                checkpoint_notice_timer = 0.0
             else:
                 campaign_complete = True
 
@@ -672,7 +798,10 @@ def run_runtime(smoke_test: bool = False, data_root: Path | None = None) -> None
         if show_briefing:
             hud_lines.append("Mission briefing active: ENTER to deploy")
         if player_dead:
-            hud_lines.append("You were eliminated: press R to retry level")
+            if checkpoint is not None and checkpoint.level_idx == level_idx:
+                hud_lines.append("You were eliminated: press R to restore checkpoint")
+            else:
+                hud_lines.append("You were eliminated: press R to retry level")
         hud_lines.append(objective_status_line(objective_state, enemies))
         if active_projectiles:
             hud_lines.append(f"Incoming: {len(active_projectiles)}")
@@ -696,6 +825,8 @@ def run_runtime(smoke_test: bool = False, data_root: Path | None = None) -> None
             hud_lines.append("Low health")
         if heal_flash_timer > 0.0:
             hud_lines.append("Medkit used")
+        if checkpoint_notice_timer > 0.0:
+            hud_lines.append("Checkpoint saved")
         hud_lines.append(f"Time L/C: {format_duration(level_elapsed)} / {format_duration(campaign_elapsed)}")
         hud_lines.append(f"Kills L/C: {level_kills} / {kills_total}")
         objective_hint_node = nearest_objective_node(player, objective_state)
@@ -767,7 +898,8 @@ def run_runtime(smoke_test: bool = False, data_root: Path | None = None) -> None
             overlay.fill((18, 2, 2, 170))
             surface.blit(overlay, (0, 0))
             dead_surface = font.render("MISSION FAILED", True, (235, 125, 125))
-            retry_surface = font.render("Press R to retry this level", True, (235, 210, 160))
+            retry_text = "Press R to restore checkpoint" if checkpoint is not None and checkpoint.level_idx == level_idx else "Press R to retry this level"
+            retry_surface = font.render(retry_text, True, (235, 210, 160))
             surface.blit(dead_surface, (16, 86))
             surface.blit(retry_surface, (16, 102))
         elif campaign_complete:

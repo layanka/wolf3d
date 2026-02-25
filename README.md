@@ -40,6 +40,7 @@ Runtime shell data sources:
 - `Space`: open/close door in front of you
 - `F` or left mouse click: shoot
 - `X`: interact with mission objectives (extraction, consoles, beacon)
+- `C`: save a manual checkpoint (runtime shell)
 - `1/2/3/4`: switch weapon archetype (`pistol` / `smg` / `shotgun` / `autorifle`)
 - `M`: toggle minimap
 - `Enter`: dismiss level briefing / advance to next level after level clear (runtime shell)
@@ -81,6 +82,7 @@ Expected visuals:
 - Defeated enemies also drop medkits (shown as green dots on minimap)
 - Runtime auto-switches to another unlocked weapon when current ammo is empty
 - Difficulty now scales incoming damage and ammo gains (drops/pickups/resupply)
+- Manual checkpoints can be restored on death from the same level
 
 Audio source and license notes:
 - [assets/audio/CREDITS.md](/Users/philippe.lefebvre2/Code/testing1/assets/audio/CREDITS.md)

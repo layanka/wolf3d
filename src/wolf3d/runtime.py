@@ -225,6 +225,12 @@ def draw_weapon_vfx(surface: pygame.Surface, weapon_id: str, timer: float) -> No
     pygame.draw.line(surface, color, (cx - radius + 1, cy), (cx + radius - 1, cy), 1)
 
 
+def format_duration(seconds: float) -> str:
+    total = max(0, int(seconds))
+    minutes, secs = divmod(total, 60)
+    return f"{minutes:02d}:{secs:02d}"
+
+
 def run_runtime(smoke_test: bool = False, data_root: Path | None = None) -> None:
     if smoke_test:
         os.environ["SDL_VIDEODRIVER"] = "dummy"
@@ -262,6 +268,12 @@ def run_runtime(smoke_test: bool = False, data_root: Path | None = None) -> None
     weapon_fx_id = weapon_cycle[0]
     damage_flash_timer = 0.0
     hit_confirm_timer = 0.0
+    campaign_elapsed = 0.0
+    level_elapsed = 0.0
+    shots_fired = 0
+    shots_hit = 0
+    kills_total = 0
+    level_kills = 0
 
     level_idx = 0
     objective_state = build_objective_state(campaign[level_idx].id)
@@ -291,6 +303,7 @@ def run_runtime(smoke_test: bool = False, data_root: Path | None = None) -> None
         return world, player, enemies, pickups, campaign_level.title
 
     world, player, enemies, pickups, level_title = load_level_state(level_idx)
+    prev_alive_count = sum(1 for enemy in enemies if enemy.alive)
 
     running = True
     frames = 0
@@ -338,6 +351,9 @@ def run_runtime(smoke_test: bool = False, data_root: Path | None = None) -> None
                     campaign_complete = False
                     active_projectiles.clear()
                     objective_state = build_objective_state(campaign[level_idx].id)
+                    level_elapsed = 0.0
+                    level_kills = 0
+                    prev_alive_count = sum(1 for enemy in enemies if enemy.alive)
                 elif event.key == pygame.K_n and campaign_complete:
                     level_idx = 0
                     world, player, enemies, pickups, level_title = load_level_state(level_idx)
@@ -349,6 +365,13 @@ def run_runtime(smoke_test: bool = False, data_root: Path | None = None) -> None
                     campaign_complete = False
                     active_projectiles.clear()
                     objective_state = build_objective_state(campaign[level_idx].id)
+                    campaign_elapsed = 0.0
+                    level_elapsed = 0.0
+                    shots_fired = 0
+                    shots_hit = 0
+                    kills_total = 0
+                    level_kills = 0
+                    prev_alive_count = sum(1 for enemy in enemies if enemy.alive)
             elif event.type == pygame.MOUSEBUTTONDOWN and event.button == 1:
                 fire_requested = True
 
@@ -364,6 +387,9 @@ def run_runtime(smoke_test: bool = False, data_root: Path | None = None) -> None
             turn += 1.0
 
         player.angle += 0.0 if (player_dead or campaign_complete) else turn * player.turn_speed * dt
+        if not show_briefing and not campaign_complete and not player_dead:
+            campaign_elapsed += dt
+            level_elapsed += dt
         world.update_doors(player, dt)
         if not player_dead and not campaign_complete:
             world.move_player(player, forward, strafe, dt)
@@ -417,7 +443,10 @@ def run_runtime(smoke_test: bool = False, data_root: Path | None = None) -> None
             )
             shot_cooldown = fire.next_cooldown
             _ = route_simulation_audio_events(False, fire)
+            if fire.fired:
+                shots_fired += 1
             if fire.hit_enemy:
+                shots_hit += 1
                 hit_confirm_timer = 0.08
             weapon_fx_id = active_weapon.id
             if active_weapon.id == "smg":
@@ -432,6 +461,12 @@ def run_runtime(smoke_test: bool = False, data_root: Path | None = None) -> None
         weapon_fx_timer = max(0.0, weapon_fx_timer - dt)
         damage_flash_timer = max(0.0, damage_flash_timer - dt)
         hit_confirm_timer = max(0.0, hit_confirm_timer - dt)
+        alive_count = sum(1 for enemy in enemies if enemy.alive)
+        if alive_count < prev_alive_count:
+            killed = prev_alive_count - alive_count
+            kills_total += killed
+            level_kills += killed
+        prev_alive_count = alive_count
 
         level_cleared = objective_complete(objective_state, enemies)
         if level_cleared and not player_dead and next_level_requested:
@@ -443,6 +478,9 @@ def run_runtime(smoke_test: bool = False, data_root: Path | None = None) -> None
                 show_briefing = True
                 active_projectiles.clear()
                 objective_state = build_objective_state(campaign[level_idx].id)
+                level_elapsed = 0.0
+                level_kills = 0
+                prev_alive_count = sum(1 for enemy in enemies if enemy.alive)
             else:
                 campaign_complete = True
 
@@ -488,6 +526,11 @@ def run_runtime(smoke_test: bool = False, data_root: Path | None = None) -> None
             hud_lines.append(f"Threat scale: x{1.0 + level_idx * 0.2:.1f}")
         if hit_confirm_timer > 0.0:
             hud_lines.append("Hit confirmed")
+        if shots_fired > 0:
+            accuracy = int((shots_hit / shots_fired) * 100)
+            hud_lines.append(f"Accuracy: {accuracy}%")
+        hud_lines.append(f"Time L/C: {format_duration(level_elapsed)} / {format_duration(campaign_elapsed)}")
+        hud_lines.append(f"Kills L/C: {level_kills} / {kills_total}")
         objective_hint_node = nearest_objective_node(player, objective_state)
         if objective_hint_node is not None:
             hud_lines.append(objective_interact_hint(objective_hint_node, objective_state, enemies))
@@ -557,9 +600,16 @@ def run_runtime(smoke_test: bool = False, data_root: Path | None = None) -> None
             overlay.fill((6, 18, 10, 170))
             surface.blit(overlay, (0, 0))
             win_surface = font.render("MISSION COMPLETE", True, (145, 235, 165))
+            acc = int((shots_hit / shots_fired) * 100) if shots_fired > 0 else 0
+            stats_surface = font.render(
+                f"Stats: time {format_duration(campaign_elapsed)} | kills {kills_total} | acc {acc}%",
+                True,
+                (225, 235, 185),
+            )
             restart_surface = font.render("Press N to restart campaign", True, (235, 235, 185))
             surface.blit(win_surface, (16, 86))
-            surface.blit(restart_surface, (16, 102))
+            surface.blit(stats_surface, (16, 102))
+            surface.blit(restart_surface, (16, 118))
 
         if damage_flash_timer > 0.0:
             flash = pygame.Surface((internal_w, internal_h), pygame.SRCALPHA)

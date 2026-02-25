@@ -74,6 +74,7 @@ Expected visuals:
 - Objective nodes are shown as cyan minimap markers
 - Shotgun now uses a 5-pellet spread pattern
 - Combat feedback includes a brief red damage flash and hit-confirm text
+- HUD/runtime now tracks level+campaign time, kills, and shooting accuracy
 
 Audio source and license notes:
 - [assets/audio/CREDITS.md](/Users/philippe.lefebvre2/Code/testing1/assets/audio/CREDITS.md)

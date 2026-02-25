@@ -574,6 +574,7 @@ def run_runtime(smoke_test: bool = False, data_root: Path | None = None) -> None
         list[dict[str, float | str]],
         list[dict[str, float | str]],
         str,
+        str,
     ]:
         campaign_level = campaign[index]
         spec = level_specs[campaign_level.id]
@@ -598,9 +599,9 @@ def run_runtime(smoke_test: bool = False, data_root: Path | None = None) -> None
             pickups.append({"type": str(pickup["type"]), "x": float(pickup["x"]), "y": float(pickup["y"])})
         ammo_pickups: list[dict[str, float | str]] = []
         health_pickups: list[dict[str, float | str]] = []
-        return world, player, enemies, pickups, ammo_pickups, health_pickups, campaign_level.title
+        return world, player, enemies, pickups, ammo_pickups, health_pickups, campaign_level.title, campaign_level.win_condition
 
-    world, player, enemies, pickups, ammo_pickups, health_pickups, level_title = load_level_state(level_idx)
+    world, player, enemies, pickups, ammo_pickups, health_pickups, level_title, level_win_condition = load_level_state(level_idx)
 
     running = True
     frames = 0
@@ -680,7 +681,7 @@ def run_runtime(smoke_test: bool = False, data_root: Path | None = None) -> None
                         stamina = checkpoint.stamina
                         show_briefing = False
                     else:
-                        world, player, enemies, pickups, ammo_pickups, health_pickups, level_title = load_level_state(level_idx)
+                        world, player, enemies, pickups, ammo_pickups, health_pickups, level_title, level_win_condition = load_level_state(level_idx)
                         shot_cooldown = 0.0
                         current_weapon_idx = 0
                         show_briefing = True
@@ -694,7 +695,7 @@ def run_runtime(smoke_test: bool = False, data_root: Path | None = None) -> None
                     heal_flash_timer = 0.0
                 elif event.key == pygame.K_n and campaign_complete:
                     level_idx = 0
-                    world, player, enemies, pickups, ammo_pickups, health_pickups, level_title = load_level_state(level_idx)
+                    world, player, enemies, pickups, ammo_pickups, health_pickups, level_title, level_win_condition = load_level_state(level_idx)
                     shot_cooldown = 0.0
                     current_weapon_idx = 0
                     unlocked_weapons = {weapon_cycle[0]}
@@ -918,7 +919,7 @@ def run_runtime(smoke_test: bool = False, data_root: Path | None = None) -> None
         if level_cleared and not player_dead and next_level_requested:
             if level_idx < len(campaign) - 1:
                 level_idx += 1
-                world, player, enemies, pickups, ammo_pickups, health_pickups, level_title = load_level_state(level_idx)
+                world, player, enemies, pickups, ammo_pickups, health_pickups, level_title, level_win_condition = load_level_state(level_idx)
                 shot_cooldown = 0.0
                 current_weapon_idx = 0
                 show_briefing = True
@@ -962,6 +963,7 @@ def run_runtime(smoke_test: bool = False, data_root: Path | None = None) -> None
 
         snapshot = build_frame_snapshot(player, enemies, world, shot_cooldown, active_weapon.label)
         hud_lines = [f"Level {level_idx + 1}/{len(campaign)}: {level_title}"] + format_hud_lines(snapshot)
+        hud_lines.append(f"Goal: {level_win_condition}")
         if level_cleared:
             if campaign_complete:
                 hud_lines.append("Campaign complete! Press N for a new run")
@@ -1080,10 +1082,12 @@ def run_runtime(smoke_test: bool = False, data_root: Path | None = None) -> None
             surface.blit(overlay, (0, 0))
             title_surface = font.render(level_title, True, (245, 210, 120))
             briefing_surface = font.render(campaign[level_idx].briefing, True, (232, 232, 236))
+            win_surface = font.render(level_win_condition, True, (218, 226, 188))
             deploy_surface = font.render("Press ENTER to deploy", True, (245, 210, 120))
             surface.blit(title_surface, (16, 70))
             surface.blit(briefing_surface, (16, 86))
-            surface.blit(deploy_surface, (16, 102))
+            surface.blit(win_surface, (16, 102))
+            surface.blit(deploy_surface, (16, 118))
         elif player_dead:
             overlay = pygame.Surface((internal_w, internal_h), pygame.SRCALPHA)
             overlay.fill((18, 2, 2, 170))

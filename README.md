@@ -94,6 +94,7 @@ Expected visuals:
 - Runtime auto-switches to another unlocked weapon when current ammo is empty
 - Difficulty now scales incoming damage and ammo gains (drops/pickups/resupply)
 - Manual checkpoints can be restored on death from the same level
+- F5/F9 quick-save now persists to disk (`saves/quicksave.pkl`) and survives restarts
 - Sprint now ramps in/out smoothly and applies a short exhaustion lockout at zero stamina
 - Camera now adds subtle movement head-bob, sprint FOV kick, and light hit-impact kick
 - Non-shotgun weapons now lose accuracy while moving/sprinting and during sustained recoil bloom

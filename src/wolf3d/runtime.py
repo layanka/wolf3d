@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import math
 import os
+import pickle
 import random
 from copy import deepcopy
 from dataclasses import dataclass, field
@@ -48,6 +49,7 @@ RECOIL_BLOOM_DECAY_PER_SECOND = 0.95
 MOVE_SPREAD_RAD = 0.012
 SPRINT_SPREAD_RAD = 0.02
 RECOIL_SPREAD_MAX_RAD = 0.055
+QUICKSAVE_FILE = "quicksave.pkl"
 
 
 @dataclass
@@ -545,7 +547,7 @@ def build_checkpoint(
     stamina: float,
     sprint_exhausted: bool,
     sprint_blend: float,
-) -> RunCheckpoint:
+    ) -> RunCheckpoint:
     return RunCheckpoint(
         level_idx=level_idx,
         world=deepcopy(world),
@@ -577,12 +579,42 @@ def build_checkpoint(
     )
 
 
+def quicksave_path(project_root: Path) -> Path:
+    return project_root / "saves" / QUICKSAVE_FILE
+
+
+def save_checkpoint_to_disk(project_root: Path, checkpoint: RunCheckpoint) -> bool:
+    path = quicksave_path(project_root)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    try:
+        with path.open("wb") as f:
+            pickle.dump(checkpoint, f)
+    except (OSError, pickle.PickleError):
+        return False
+    return True
+
+
+def load_checkpoint_from_disk(project_root: Path) -> RunCheckpoint | None:
+    path = quicksave_path(project_root)
+    if not path.exists():
+        return None
+    try:
+        with path.open("rb") as f:
+            loaded = pickle.load(f)
+    except (OSError, pickle.PickleError, AttributeError, EOFError):
+        return None
+    if isinstance(loaded, RunCheckpoint):
+        return loaded
+    return None
+
+
 def run_runtime(smoke_test: bool = False, data_root: Path | None = None) -> None:
     if smoke_test:
         os.environ["SDL_VIDEODRIVER"] = "dummy"
 
+    project_root = Path(__file__).resolve().parents[2]
     if data_root is None:
-        data_root = Path(__file__).resolve().parents[2] / "game_data"
+        data_root = project_root / "game_data"
 
     campaign = load_campaign(data_root)
     enemy_types = {e.id: e for e in load_enemy_types(data_root)}
@@ -598,7 +630,7 @@ def run_runtime(smoke_test: bool = False, data_root: Path | None = None) -> None
     screen = pygame.display.set_mode((screen_w, screen_h))
     surface = pygame.Surface((internal_w, internal_h))
     font = pygame.font.Font(None, 18)
-    audio = RuntimeAudioManager(Path(__file__).resolve().parents[2])
+    audio = RuntimeAudioManager(project_root)
     clock = pygame.time.Clock()
     pygame.display.set_caption("Wolf3D Real Runtime (Campaign Shell)")
 
@@ -749,6 +781,7 @@ def run_runtime(smoke_test: bool = False, data_root: Path | None = None) -> None
         next_level_requested = False
         interact_requested = False
         checkpoint_requested = False
+        quicksave_requested = False
         reload_requested = False
         weapon_cycle_step = 0
 
@@ -782,8 +815,20 @@ def run_runtime(smoke_test: bool = False, data_root: Path | None = None) -> None
                     checkpoint_requested = True
                 elif event.key == pygame.K_F5:
                     checkpoint_requested = True
+                    quicksave_requested = True
                 elif event.key == pygame.K_F9:
-                    _ = restore_checkpoint_state()
+                    loaded_checkpoint = load_checkpoint_from_disk(project_root)
+                    if loaded_checkpoint is not None:
+                        checkpoint = loaded_checkpoint
+                        restored = restore_checkpoint_state()
+                        if restored:
+                            checkpoint_notice_text = "Quick-load restored"
+                            checkpoint_notice_timer = 1.0
+                    else:
+                        restored = restore_checkpoint_state()
+                        if not restored:
+                            checkpoint_notice_text = "No quick-save found"
+                            checkpoint_notice_timer = 1.0
                 elif event.key == pygame.K_RETURN:
                     if show_briefing:
                         show_briefing = False
@@ -1026,7 +1071,11 @@ def run_runtime(smoke_test: bool = False, data_root: Path | None = None) -> None
                 sprint_exhausted=sprint_exhausted,
                 sprint_blend=sprint_blend,
             )
-            checkpoint_notice_text = "Checkpoint saved"
+            if quicksave_requested:
+                disk_saved = save_checkpoint_to_disk(project_root, checkpoint)
+                checkpoint_notice_text = "Quick-save written" if disk_saved else "Quick-save failed"
+            else:
+                checkpoint_notice_text = "Checkpoint saved"
             checkpoint_notice_timer = 1.0
 
         prev_weapon_idx = current_weapon_idx

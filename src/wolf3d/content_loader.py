@@ -68,6 +68,8 @@ def load_weapon_types(data_root: Path) -> list[WeaponType]:
                 cooldown=float(item["cooldown"]),
                 range=float(item["range"]),
                 ammo_type=item["ammo_type"],
+                magazine_size=int(item["magazine_size"]),
+                reload_time=float(item["reload_time"]),
             )
         )
     return weapons

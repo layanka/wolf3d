@@ -6,7 +6,9 @@
       "damage": 18,
       "cooldown": 0.28,
       "range": 10.0,
-      "ammo_type": "light"
+      "ammo_type": "light",
+      "magazine_size": 12,
+      "reload_time": 1.1
     },
     {
       "id": "smg",
@@ -14,7 +16,9 @@
       "damage": 10,
       "cooldown": 0.09,
       "range": 9.0,
-      "ammo_type": "light"
+      "ammo_type": "light",
+      "magazine_size": 24,
+      "reload_time": 1.35
     },
     {
       "id": "shotgun",
@@ -22,7 +26,9 @@
       "damage": 52,
       "cooldown": 0.82,
       "range": 5.0,
-      "ammo_type": "shell"
+      "ammo_type": "shell",
+      "magazine_size": 6,
+      "reload_time": 1.45
     },
     {
       "id": "autorifle",
@@ -30,7 +36,9 @@
       "damage": 16,
       "cooldown": 0.14,
       "range": 12.0,
-      "ammo_type": "rifle"
+      "ammo_type": "rifle",
+      "magazine_size": 30,
+      "reload_time": 1.6
     }
   ]
 }

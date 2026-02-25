@@ -74,6 +74,9 @@ class RunCheckpoint:
     current_weapon_idx: int
     unlocked_weapons: set[str]
     ammo_counts: dict[str, int]
+    magazine_counts: dict[str, int]
+    reload_timer: float
+    reload_weapon_id: str | None
     campaign_elapsed: float
     level_elapsed: float
     shots_fired: int
@@ -333,7 +336,7 @@ def draw_help_overlay(surface: pygame.Surface, font: pygame.font.Font) -> None:
         "1/2/3/4: weapon select",
         "C: save checkpoint",
         "F5/F9: quick save/load",
-        "R: restore/retry on death",
+        "R: reload (or restore/retry on death)",
         "M: minimap toggle",
         "Z: minimap zoom",
         "F1/F2/F3: difficulty",
@@ -421,23 +424,60 @@ def enemy_drop_heal(enemy_type_id: str, heal_gain_mult: float) -> int:
     return max(1, int(round(base * heal_gain_mult)))
 
 
+def build_initial_magazines(
+    weapon_cycle: list[str],
+    weapons_by_id: dict[str, object],
+    ammo_counts: dict[str, int],
+) -> dict[str, int]:
+    magazines = {weapon_id: 0 for weapon_id in weapon_cycle}
+    if not weapon_cycle:
+        return magazines
+    starter_weapon_id = weapon_cycle[0]
+    starter_weapon = weapons_by_id[starter_weapon_id]
+    reserve = ammo_counts.get(starter_weapon.ammo_type, 0)
+    rounds = min(starter_weapon.magazine_size, reserve)
+    magazines[starter_weapon_id] = rounds
+    ammo_counts[starter_weapon.ammo_type] = reserve - rounds
+    return magazines
+
+
+def refill_weapon_magazine(
+    weapon_id: str,
+    weapons_by_id: dict[str, object],
+    ammo_counts: dict[str, int],
+    magazine_counts: dict[str, int],
+) -> int:
+    weapon = weapons_by_id[weapon_id]
+    current_mag = magazine_counts.get(weapon_id, 0)
+    missing = max(0, weapon.magazine_size - current_mag)
+    reserve = ammo_counts.get(weapon.ammo_type, 0)
+    transfer = min(missing, reserve)
+    if transfer > 0:
+        magazine_counts[weapon_id] = current_mag + transfer
+        ammo_counts[weapon.ammo_type] = reserve - transfer
+    return transfer
+
+
 def choose_fallback_weapon(
     current_idx: int,
     weapon_cycle: list[str],
     unlocked_weapons: set[str],
     weapons_by_id: dict[str, object],
     ammo_counts: dict[str, int],
+    magazine_counts: dict[str, int],
 ) -> int:
     current_id = weapon_cycle[current_idx]
-    current_ammo_type = weapons_by_id[current_id].ammo_type
-    if ammo_counts.get(current_ammo_type, 0) > 0:
+    current_weapon = weapons_by_id[current_id]
+    current_mag = magazine_counts.get(current_id, 0)
+    current_reserve = ammo_counts.get(current_weapon.ammo_type, 0)
+    if current_mag > 0 or current_reserve > 0:
         return current_idx
 
     for idx, weapon_id in enumerate(weapon_cycle):
         if weapon_id not in unlocked_weapons:
             continue
-        ammo_type = weapons_by_id[weapon_id].ammo_type
-        if ammo_counts.get(ammo_type, 0) > 0:
+        weapon = weapons_by_id[weapon_id]
+        if magazine_counts.get(weapon_id, 0) > 0 or ammo_counts.get(weapon.ammo_type, 0) > 0:
             return idx
     return current_idx
 
@@ -472,6 +512,9 @@ def build_checkpoint(
     current_weapon_idx: int,
     unlocked_weapons: set[str],
     ammo_counts: dict[str, int],
+    magazine_counts: dict[str, int],
+    reload_timer: float,
+    reload_weapon_id: str | None,
     campaign_elapsed: float,
     level_elapsed: float,
     shots_fired: int,
@@ -496,6 +539,9 @@ def build_checkpoint(
         current_weapon_idx=current_weapon_idx,
         unlocked_weapons=set(unlocked_weapons),
         ammo_counts=dict(ammo_counts),
+        magazine_counts=dict(magazine_counts),
+        reload_timer=reload_timer,
+        reload_weapon_id=reload_weapon_id,
         campaign_elapsed=campaign_elapsed,
         level_elapsed=level_elapsed,
         shots_fired=shots_fired,
@@ -555,6 +601,9 @@ def run_runtime(smoke_test: bool = False, data_root: Path | None = None) -> None
     level_kills = 0
     difficulty = DIFFICULTY_PROFILES["normal"]
     ammo_counts = default_ammo_counts(difficulty.ammo_gain_mult)
+    magazine_counts = build_initial_magazines(weapon_cycle, weapons_by_id, ammo_counts)
+    reload_timer = 0.0
+    reload_weapon_id: str | None = None
     dry_fire_timer = 0.0
     heal_flash_timer = 0.0
     checkpoint: RunCheckpoint | None = None
@@ -612,10 +661,10 @@ def run_runtime(smoke_test: bool = False, data_root: Path | None = None) -> None
         nonlocal level_idx
         nonlocal world, player, enemies, pickups, ammo_pickups, health_pickups
         nonlocal objective_state, active_projectiles, shot_cooldown, current_weapon_idx
-        nonlocal unlocked_weapons, ammo_counts, campaign_elapsed, level_elapsed
+        nonlocal unlocked_weapons, ammo_counts, magazine_counts, campaign_elapsed, level_elapsed
         nonlocal shots_fired, shots_hit, kills_total, level_kills, level_title
         nonlocal difficulty, stamina, show_briefing, player_dead, campaign_complete
-        nonlocal dry_fire_timer, heal_flash_timer, paused
+        nonlocal dry_fire_timer, heal_flash_timer, paused, reload_timer, reload_weapon_id
         nonlocal checkpoint_notice_timer, checkpoint_notice_text
 
         if checkpoint is None:
@@ -634,6 +683,9 @@ def run_runtime(smoke_test: bool = False, data_root: Path | None = None) -> None
         current_weapon_idx = checkpoint.current_weapon_idx
         unlocked_weapons = set(checkpoint.unlocked_weapons)
         ammo_counts = dict(checkpoint.ammo_counts)
+        magazine_counts = dict(checkpoint.magazine_counts)
+        reload_timer = checkpoint.reload_timer
+        reload_weapon_id = checkpoint.reload_weapon_id
         campaign_elapsed = checkpoint.campaign_elapsed
         level_elapsed = checkpoint.level_elapsed
         shots_fired = checkpoint.shots_fired
@@ -663,6 +715,7 @@ def run_runtime(smoke_test: bool = False, data_root: Path | None = None) -> None
         next_level_requested = False
         interact_requested = False
         checkpoint_requested = False
+        reload_requested = False
         weapon_cycle_step = 0
 
         for event in pygame.event.get():
@@ -724,10 +777,14 @@ def run_runtime(smoke_test: bool = False, data_root: Path | None = None) -> None
                         level_elapsed = 0.0
                         level_kills = 0
                         stamina = STAMINA_MAX
+                        reload_timer = 0.0
+                        reload_weapon_id = None
                     player_dead = False
                     campaign_complete = False
                     dry_fire_timer = 0.0
                     heal_flash_timer = 0.0
+                elif event.key == pygame.K_r and not paused and not show_briefing and not player_dead and not campaign_complete:
+                    reload_requested = True
                 elif event.key == pygame.K_n and campaign_complete:
                     level_idx = 0
                     world, player, enemies, pickups, ammo_pickups, health_pickups, level_title, level_win_condition = load_level_state(level_idx)
@@ -746,6 +803,9 @@ def run_runtime(smoke_test: bool = False, data_root: Path | None = None) -> None
                     kills_total = 0
                     level_kills = 0
                     ammo_counts = default_ammo_counts(difficulty.ammo_gain_mult)
+                    magazine_counts = build_initial_magazines(weapon_cycle, weapons_by_id, ammo_counts)
+                    reload_timer = 0.0
+                    reload_weapon_id = None
                     dry_fire_timer = 0.0
                     heal_flash_timer = 0.0
                     stamina = STAMINA_MAX
@@ -823,8 +883,10 @@ def run_runtime(smoke_test: bool = False, data_root: Path | None = None) -> None
             if dx * dx + dy * dy <= 0.35 * 0.35:
                 pickup_type = str(pickup["type"])
                 unlocked_weapons.add(pickup_type)
+                magazine_counts.setdefault(pickup_type, 0)
                 for ammo_type, amount in pickup_ammo_bonus(pickup_type, difficulty.ammo_gain_mult).items():
                     ammo_counts[ammo_type] = ammo_counts.get(ammo_type, 0) + amount
+                refill_weapon_magazine(pickup_type, weapons_by_id, ammo_counts, magazine_counts)
                 if objective_state.keycard_weapon_id == pickup_type:
                     objective_state.keycard_collected = True
                 pickups.remove(pickup)
@@ -881,6 +943,9 @@ def run_runtime(smoke_test: bool = False, data_root: Path | None = None) -> None
                 current_weapon_idx=current_weapon_idx,
                 unlocked_weapons=unlocked_weapons,
                 ammo_counts=ammo_counts,
+                magazine_counts=magazine_counts,
+                reload_timer=reload_timer,
+                reload_weapon_id=reload_weapon_id,
                 campaign_elapsed=campaign_elapsed,
                 level_elapsed=level_elapsed,
                 shots_fired=shots_fired,
@@ -899,50 +964,63 @@ def run_runtime(smoke_test: bool = False, data_root: Path | None = None) -> None
         if weapon_cycle_step != 0:
             current_weapon_idx = cycle_weapon_index(current_weapon_idx, weapon_cycle_step, weapon_cycle, unlocked_weapons)
         current_weapon_idx = choose_fallback_weapon(
-            current_weapon_idx, weapon_cycle, unlocked_weapons, weapons_by_id, ammo_counts
+            current_weapon_idx, weapon_cycle, unlocked_weapons, weapons_by_id, ammo_counts, magazine_counts
         )
 
         active_weapon = weapons_by_id[weapon_cycle[current_weapon_idx]]
         target_enemy = enemy_in_sights(player, enemies, world, active_weapon.range)
         ammo_type = active_weapon.ammo_type
-        weapon_ammo = ammo_counts.get(ammo_type, 0)
-        can_fire = weapon_ammo > 0
+        reserve_ammo = ammo_counts.get(ammo_type, 0)
+        magazine_ammo = magazine_counts.get(active_weapon.id, 0)
+        can_fire = magazine_ammo > 0 and reload_timer <= 0.0
+        if (
+            reload_requested
+            and simulation_active
+            and reload_timer <= 0.0
+            and magazine_ammo < active_weapon.magazine_size
+            and reserve_ammo > 0
+        ):
+            reload_timer = active_weapon.reload_time
+            reload_weapon_id = active_weapon.id
         if fire_requested and simulation_active:
-            if not can_fire:
-                dry_fire_timer = 0.15
-            ray_offsets: tuple[float, ...] = (0.0,)
-            per_pellet_damage = active_weapon.damage
-            if active_weapon.id == "shotgun":
-                ray_offsets = (-0.08, -0.04, 0.0, 0.04, 0.08)
-                per_pellet_damage = max(1, active_weapon.damage // 3)
-            if can_fire:
-                fire, _target = attempt_fire_multi(
-                    shot_cooldown,
-                    player,
-                    world,
-                    enemies,
-                    damage=per_pellet_damage,
-                    max_range=active_weapon.range,
-                    cooldown=active_weapon.cooldown,
-                    ray_offsets=ray_offsets,
-                )
-                shot_cooldown = fire.next_cooldown
-                _ = route_simulation_audio_events(False, fire)
-                if fire.fired:
-                    ammo_counts[ammo_type] = max(0, weapon_ammo - 1)
-                    shots_fired += 1
-                if fire.hit_enemy:
-                    shots_hit += 1
-                    hit_confirm_timer = 0.08
-                weapon_fx_id = active_weapon.id
-                if active_weapon.id == "smg":
-                    weapon_fx_timer = 0.045
-                elif active_weapon.id == "shotgun":
-                    weapon_fx_timer = 0.11
-                elif active_weapon.id == "autorifle":
-                    weapon_fx_timer = 0.075
-                else:
-                    weapon_fx_timer = 0.065
+            if reload_timer > 0.0:
+                pass
+            else:
+                if not can_fire:
+                    dry_fire_timer = 0.15
+                ray_offsets: tuple[float, ...] = (0.0,)
+                per_pellet_damage = active_weapon.damage
+                if active_weapon.id == "shotgun":
+                    ray_offsets = (-0.08, -0.04, 0.0, 0.04, 0.08)
+                    per_pellet_damage = max(1, active_weapon.damage // 3)
+                if can_fire:
+                    fire, _target = attempt_fire_multi(
+                        shot_cooldown,
+                        player,
+                        world,
+                        enemies,
+                        damage=per_pellet_damage,
+                        max_range=active_weapon.range,
+                        cooldown=active_weapon.cooldown,
+                        ray_offsets=ray_offsets,
+                    )
+                    shot_cooldown = fire.next_cooldown
+                    _ = route_simulation_audio_events(False, fire)
+                    if fire.fired:
+                        magazine_counts[active_weapon.id] = max(0, magazine_ammo - 1)
+                        shots_fired += 1
+                    if fire.hit_enemy:
+                        shots_hit += 1
+                        hit_confirm_timer = 0.08
+                    weapon_fx_id = active_weapon.id
+                    if active_weapon.id == "smg":
+                        weapon_fx_timer = 0.045
+                    elif active_weapon.id == "shotgun":
+                        weapon_fx_timer = 0.11
+                    elif active_weapon.id == "autorifle":
+                        weapon_fx_timer = 0.075
+                    else:
+                        weapon_fx_timer = 0.065
         decay_dt = 0.0 if paused else dt
         shot_cooldown = max(0.0, shot_cooldown - decay_dt)
         weapon_fx_timer = max(0.0, weapon_fx_timer - decay_dt)
@@ -951,6 +1029,11 @@ def run_runtime(smoke_test: bool = False, data_root: Path | None = None) -> None
         dry_fire_timer = max(0.0, dry_fire_timer - decay_dt)
         heal_flash_timer = max(0.0, heal_flash_timer - decay_dt)
         checkpoint_notice_timer = max(0.0, checkpoint_notice_timer - decay_dt)
+        was_reloading = reload_timer > 0.0
+        reload_timer = max(0.0, reload_timer - decay_dt)
+        if was_reloading and reload_timer <= 0.0 and reload_weapon_id is not None:
+            refill_weapon_magazine(reload_weapon_id, weapons_by_id, ammo_counts, magazine_counts)
+            reload_weapon_id = None
         level_cleared = objective_complete(objective_state, enemies)
         if level_cleared and not player_dead and next_level_requested:
             if level_idx < len(campaign) - 1:
@@ -966,8 +1049,13 @@ def run_runtime(smoke_test: bool = False, data_root: Path | None = None) -> None
                     difficulty.ammo_gain_mult,
                 ).items():
                     ammo_counts[ammo_type] = ammo_counts.get(ammo_type, 0) + amount
+                for weapon_id in list(magazine_counts):
+                    if weapon_id in unlocked_weapons:
+                        refill_weapon_magazine(weapon_id, weapons_by_id, ammo_counts, magazine_counts)
                 level_elapsed = 0.0
                 level_kills = 0
+                reload_timer = 0.0
+                reload_weapon_id = None
                 checkpoint = None
                 checkpoint_notice_timer = 0.0
             else:
@@ -1035,14 +1123,20 @@ def run_runtime(smoke_test: bool = False, data_root: Path | None = None) -> None
         hud_lines.append(f"Stamina: {int(stamina)}%")
         if simulation_active and is_sprinting:
             hud_lines.append("Sprinting")
-        hud_lines.append(f"Ammo ({ammo_type}): {ammo_counts.get(ammo_type, 0)}")
+        active_mag = magazine_counts.get(active_weapon.id, 0)
+        active_reserve = ammo_counts.get(ammo_type, 0)
+        hud_lines.append(f"Ammo ({ammo_type}): {active_mag}/{active_weapon.magazine_size} | reserve {active_reserve}")
         hud_lines.append(
             f"Reserves L/S/R: {ammo_counts.get('light', 0)}/{ammo_counts.get('shell', 0)}/{ammo_counts.get('rifle', 0)}"
         )
         hud_lines.append(f"Difficulty: {difficulty.id} (F1/F2/F3)")
-        if ammo_counts.get(ammo_type, 0) <= 3:
+        if active_mag == 0 and active_reserve > 0 and reload_timer <= 0.0:
+            hud_lines.append("Press R to reload")
+        elif reload_timer > 0.0 and reload_weapon_id == active_weapon.id:
+            hud_lines.append("Reloading...")
+        if active_mag <= 3 and (active_mag + active_reserve) > 0:
             hud_lines.append("Low ammo")
-        if dry_fire_timer > 0.0:
+        if dry_fire_timer > 0.0 and active_mag <= 0 and active_reserve <= 0:
             hud_lines.append("Out of ammo")
         if player.health <= 30:
             hud_lines.append("Low health")

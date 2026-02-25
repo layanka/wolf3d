@@ -51,7 +51,8 @@ Runtime shell data sources:
 - `M`: toggle minimap
 - `Z`: cycle minimap zoom levels
 - `Enter`: dismiss level briefing / advance to next level after level clear (runtime shell)
-- `R`: retry current level after death (runtime shell)
+- `R`: reload current weapon magazine (runtime shell)
+- `R`: restore checkpoint / retry current level after death (runtime shell)
 - `N`: restart campaign after final level completion (runtime shell)
 - `F1/F2/F3`: set difficulty (`easy` / `normal` / `hard`) at runtime
 - `H`: show/hide in-game controls help overlay
@@ -86,6 +87,7 @@ Expected visuals:
 - Combat feedback includes a brief red damage flash and hit-confirm text
 - HUD/runtime now tracks level+campaign time, kills, and shooting accuracy
 - Weapons now consume ammo by ammo type, with pickup and between-level ammo gains
+- Weapons now use per-weapon magazines with timed reloads from shared reserves
 - Defeated enemies drop ammo packs (shown as cyan dots on minimap)
 - Defeated enemies also drop medkits (shown as green dots on minimap)
 - Runtime auto-switches to another unlocked weapon when current ammo is empty

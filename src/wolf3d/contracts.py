@@ -32,6 +32,8 @@ class WeaponType:
     cooldown: float
     range: float
     ammo_type: str
+    magazine_size: int
+    reload_time: float
 
 
 @dataclass(frozen=True)

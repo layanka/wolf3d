@@ -47,6 +47,7 @@ Runtime shell data sources:
 - `P`: pause/resume gameplay
 - `1/2/3/4`: switch weapon archetype (`pistol` / `smg` / `shotgun` / `autorifle`)
 - `M`: toggle minimap
+- `Z`: cycle minimap zoom levels
 - `Enter`: dismiss level briefing / advance to next level after level clear (runtime shell)
 - `R`: retry current level after death (runtime shell)
 - `N`: restart campaign after final level completion (runtime shell)

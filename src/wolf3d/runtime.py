@@ -334,6 +334,7 @@ def draw_help_overlay(surface: pygame.Surface, font: pygame.font.Font) -> None:
         "C: save checkpoint",
         "R: restore/retry on death",
         "M: minimap toggle",
+        "Z: minimap zoom",
         "F1/F2/F3: difficulty",
         "H: toggle help",
         "ESC: quit",
@@ -532,6 +533,8 @@ def run_runtime(smoke_test: bool = False, data_root: Path | None = None) -> None
 
     fov = math.radians(60)
     show_minimap = True
+    minimap_scale_levels = (6, 8, 12)
+    minimap_scale_idx = 1
     shot_cooldown = 0.0
     current_weapon_idx = 0
     unlocked_weapons = {weapon_cycle[0]}
@@ -626,6 +629,8 @@ def run_runtime(smoke_test: bool = False, data_root: Path | None = None) -> None
                     show_help = not show_help
                 elif event.key == pygame.K_p:
                     paused = not paused
+                elif event.key == pygame.K_z:
+                    minimap_scale_idx = (minimap_scale_idx + 1) % len(minimap_scale_levels)
                 elif event.key == pygame.K_TAB:
                     mouse_look = not mouse_look
                     pygame.event.set_grab(mouse_look)
@@ -977,6 +982,8 @@ def run_runtime(smoke_test: bool = False, data_root: Path | None = None) -> None
             hud_lines.append("Help open: press H to close")
         if mouse_look:
             hud_lines.append("Mouse-look: TAB to release")
+        if show_minimap:
+            hud_lines.append(f"Minimap zoom: {minimap_scale_levels[minimap_scale_idx]} (Z)")
         if player_dead:
             if checkpoint is not None and checkpoint.level_idx == level_idx:
                 hud_lines.append("You were eliminated: press R to restore checkpoint")
@@ -1037,7 +1044,7 @@ def run_runtime(smoke_test: bool = False, data_root: Path | None = None) -> None
         draw_weapon_vfx(surface, weapon_fx_id, weapon_fx_timer)
 
         if show_minimap:
-            scale = 8
+            scale = minimap_scale_levels[minimap_scale_idx]
             pad = 6
             for y, row in enumerate(world.tile_map):
                 for x, tile in enumerate(row):

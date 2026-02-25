@@ -47,7 +47,7 @@ def main() -> None:
     world_sim.update_doors(player, 0.016)
     fire, _target = attempt_fire_multi(0.0, player, world_sim, enemy_states)
     audio_events = route_simulation_audio_events(door_toggled, fire)
-    frame = build_frame_snapshot(player, enemy_states, world_sim, fire.next_cooldown)
+    frame = build_frame_snapshot(player, enemy_states, world_sim, fire.next_cooldown, "Service Pistol")
     hud_lines = format_hud_lines(frame)
     print(f"World sim smoke: door_toggled={door_toggled} first_door_open_amount={next(iter(world_sim.doors.values())).open_amount:.2f}")
     print(f"Combat smoke: fired={fire.fired} hit_enemy={fire.hit_enemy} enemy_down={fire.enemy_down} impact={fire.impact_distance:.2f}")
@@ -55,7 +55,7 @@ def main() -> None:
     print("HUD smoke:")
     for line in hud_lines:
         print(f"  - {line}")
-    print("Real game runtime shell is initialized. Next step: extract loop/render/audio runtime from poc_game.py")
+    print("Real game runtime shell is initialized. Next step: deepen AI, level scripting, and weapon progression.")
 
 
 if __name__ == "__main__":

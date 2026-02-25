@@ -16,6 +16,7 @@ from src.wolf3d.content_loader import (
     validate_cross_refs,
 )
 from src.wolf3d.entities.models import EnemyState, PlayerState
+from src.wolf3d.gameplay.ai import update_enemies
 from src.wolf3d.gameplay.combat import attempt_fire_multi, normalize_angle
 from src.wolf3d.render.frame import build_frame_snapshot
 from src.wolf3d.ui.hud import format_hud_lines
@@ -71,6 +72,8 @@ def run_runtime(smoke_test: bool = False, data_root: Path | None = None) -> None
     level_specs = {l.id: l for l in load_level_specs(data_root)}
     weapon_types = load_weapon_types(data_root)
     validate_cross_refs(campaign, list(level_specs.values()), list(enemy_types.values()), weapon_types)
+    weapons_by_id = {weapon.id: weapon for weapon in weapon_types}
+    weapon_cycle = [w.id for w in weapon_types]
 
     pygame.init()
     screen_w, screen_h = 960, 600
@@ -84,6 +87,7 @@ def run_runtime(smoke_test: bool = False, data_root: Path | None = None) -> None
     fov = math.radians(60)
     show_minimap = True
     shot_cooldown = 0.0
+    current_weapon_idx = 0
 
     level_idx = 0
 
@@ -132,6 +136,14 @@ def run_runtime(smoke_test: bool = False, data_root: Path | None = None) -> None
                     fire_requested = True
                 elif event.key == pygame.K_RETURN:
                     next_level_requested = True
+                elif event.key == pygame.K_1:
+                    current_weapon_idx = 0
+                elif event.key == pygame.K_2 and len(weapon_cycle) >= 2:
+                    current_weapon_idx = 1
+                elif event.key == pygame.K_3 and len(weapon_cycle) >= 3:
+                    current_weapon_idx = 2
+                elif event.key == pygame.K_4 and len(weapon_cycle) >= 4:
+                    current_weapon_idx = 3
             elif event.type == pygame.MOUSEBUTTONDOWN and event.button == 1:
                 fire_requested = True
 
@@ -149,9 +161,20 @@ def run_runtime(smoke_test: bool = False, data_root: Path | None = None) -> None
         player.angle += turn * player.turn_speed * dt
         world.update_doors(player, dt)
         world.move_player(player, forward, strafe, dt)
+        enemy_damage = update_enemies(player, enemies, enemy_types, world, dt)
+        player.health = max(0, player.health - enemy_damage)
 
+        active_weapon = weapons_by_id[weapon_cycle[current_weapon_idx]]
         if fire_requested:
-            fire, _target = attempt_fire_multi(shot_cooldown, player, world, enemies)
+            fire, _target = attempt_fire_multi(
+                shot_cooldown,
+                player,
+                world,
+                enemies,
+                damage=active_weapon.damage,
+                max_range=active_weapon.range,
+                cooldown=active_weapon.cooldown,
+            )
             shot_cooldown = fire.next_cooldown
             _ = route_simulation_audio_events(False, fire)
         shot_cooldown = max(0.0, shot_cooldown - dt)
@@ -161,6 +184,7 @@ def run_runtime(smoke_test: bool = False, data_root: Path | None = None) -> None
             level_idx += 1
             world, player, enemies, level_title = load_level_state(level_idx)
             shot_cooldown = 0.0
+            current_weapon_idx = 0
 
         surface.fill((35, 35, 40))
         pygame.draw.rect(surface, (70, 78, 102), (0, internal_h // 2, internal_w, internal_h // 2))
@@ -185,7 +209,7 @@ def run_runtime(smoke_test: bool = False, data_root: Path | None = None) -> None
 
         render_enemies(surface, enemies, player, fov, depth_buffer)
 
-        snapshot = build_frame_snapshot(player, enemies, world, shot_cooldown)
+        snapshot = build_frame_snapshot(player, enemies, world, shot_cooldown, active_weapon.label)
         hud_lines = [f"Level {level_idx + 1}/{len(campaign)}: {level_title}"] + format_hud_lines(snapshot)
         if level_cleared:
             hud_lines.append("Level clear! Press ENTER for next level")

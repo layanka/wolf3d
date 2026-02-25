@@ -39,6 +39,7 @@ Runtime shell data sources:
 - `Left/Right` or `Q/E`: rotate
 - `Space`: open/close door in front of you
 - `F` or left mouse click: shoot
+- `1/2/3/4`: switch weapon archetype (`pistol` / `smg` / `shotgun` / `autorifle`)
 - `M`: toggle minimap
 - `Enter`: advance to next level after level clear (runtime shell)
 - `Esc`: quit

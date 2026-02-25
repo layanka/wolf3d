@@ -10,6 +10,7 @@ class PlayerState:
     angle: float = 0.2
     move_speed: float = 3.0
     turn_speed: float = 2.2
+    health: int = 100
 
 
 @dataclass
@@ -28,6 +29,8 @@ class EnemyState:
     y: float
     health: int
     alive: bool = True
+    attack_cooldown: float = 0.0
+    behavior_phase: float = 0.0
 
 
 @dataclass(frozen=True)

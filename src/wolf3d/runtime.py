@@ -55,6 +55,9 @@ SETTINGS_FILE = "settings.json"
 MOUSE_SENSITIVITY_MIN = 0.0012
 MOUSE_SENSITIVITY_MAX = 0.0065
 MOUSE_SENSITIVITY_STEP = 0.0003
+AUDIO_VOLUME_MIN = 0.0
+AUDIO_VOLUME_MAX = 1.0
+AUDIO_VOLUME_STEP = 0.08
 CROSSHAIR_BASE_RADIUS = 4
 CROSSHAIR_MAX_BLOOM = 9
 HITMARKER_RADIUS = 8
@@ -360,6 +363,8 @@ def draw_help_overlay(surface: pygame.Surface, font: pygame.font.Font) -> None:
         "Q/E or Left/Right: turn",
         "TAB: toggle mouse-look",
         "- / =: adjust mouse sensitivity",
+        "9 / 0: audio volume -/+",
+        "F10: mute/unmute audio",
         "F or Left Click: fire",
         "Mouse Wheel / [ ]: cycle weapons",
         "Space: door interaction",
@@ -614,6 +619,8 @@ def save_runtime_settings(
     mouse_sensitivity: float,
     show_minimap: bool,
     minimap_scale_idx: int,
+    audio_volume: float,
+    audio_muted: bool,
 ) -> bool:
     path = settings_path(project_root)
     path.parent.mkdir(parents=True, exist_ok=True)
@@ -621,6 +628,8 @@ def save_runtime_settings(
         "mouse_sensitivity": mouse_sensitivity,
         "show_minimap": show_minimap,
         "minimap_scale_idx": minimap_scale_idx,
+        "audio_volume": audio_volume,
+        "audio_muted": audio_muted,
     }
     try:
         with path.open("w", encoding="utf-8") as f:
@@ -723,6 +732,10 @@ def run_runtime(smoke_test: bool = False, data_root: Path | None = None, quicklo
     mouse_look = False
     loaded_sens = float(settings.get("mouse_sensitivity", 0.0028))
     mouse_sensitivity = max(MOUSE_SENSITIVITY_MIN, min(MOUSE_SENSITIVITY_MAX, loaded_sens))
+    loaded_audio_volume = float(settings.get("audio_volume", 1.0))
+    audio_volume = max(AUDIO_VOLUME_MIN, min(AUDIO_VOLUME_MAX, loaded_audio_volume))
+    audio_muted = bool(settings.get("audio_muted", False))
+    audio.set_master_volume(0.0 if audio_muted else audio_volume)
     stamina = STAMINA_MAX
     sprint_exhausted = False
     sprint_blend = 0.0
@@ -732,6 +745,16 @@ def run_runtime(smoke_test: bool = False, data_root: Path | None = None, quicklo
 
     level_idx = 0
     objective_state = build_objective_state(campaign[level_idx].id)
+
+    def persist_runtime_settings() -> None:
+        _ = save_runtime_settings(
+            project_root,
+            mouse_sensitivity,
+            show_minimap,
+            minimap_scale_idx,
+            audio_volume,
+            audio_muted,
+        )
 
     def load_level_state(
         index: int,
@@ -862,27 +885,47 @@ def run_runtime(smoke_test: bool = False, data_root: Path | None = None, quicklo
                     running = False
                 elif event.key == pygame.K_m:
                     show_minimap = not show_minimap
-                    _ = save_runtime_settings(project_root, mouse_sensitivity, show_minimap, minimap_scale_idx)
+                    persist_runtime_settings()
                 elif event.key == pygame.K_h:
                     show_help = not show_help
                 elif event.key == pygame.K_p:
                     paused = not paused
                 elif event.key == pygame.K_z:
                     minimap_scale_idx = (minimap_scale_idx + 1) % len(minimap_scale_levels)
-                    _ = save_runtime_settings(project_root, mouse_sensitivity, show_minimap, minimap_scale_idx)
+                    persist_runtime_settings()
                 elif event.key == pygame.K_TAB:
                     mouse_look = not mouse_look
                     pygame.event.set_grab(mouse_look)
                     pygame.mouse.set_visible(not mouse_look)
                 elif event.key in (pygame.K_MINUS, pygame.K_KP_MINUS):
                     mouse_sensitivity = max(MOUSE_SENSITIVITY_MIN, mouse_sensitivity - MOUSE_SENSITIVITY_STEP)
-                    _ = save_runtime_settings(project_root, mouse_sensitivity, show_minimap, minimap_scale_idx)
+                    persist_runtime_settings()
                     settings_notice_text = f"Mouse sensitivity: {mouse_sensitivity:.4f}"
                     settings_notice_timer = 1.0
                 elif event.key in (pygame.K_EQUALS, pygame.K_PLUS, pygame.K_KP_PLUS):
                     mouse_sensitivity = min(MOUSE_SENSITIVITY_MAX, mouse_sensitivity + MOUSE_SENSITIVITY_STEP)
-                    _ = save_runtime_settings(project_root, mouse_sensitivity, show_minimap, minimap_scale_idx)
+                    persist_runtime_settings()
                     settings_notice_text = f"Mouse sensitivity: {mouse_sensitivity:.4f}"
+                    settings_notice_timer = 1.0
+                elif event.key in (pygame.K_9, pygame.K_KP9):
+                    audio_volume = max(AUDIO_VOLUME_MIN, audio_volume - AUDIO_VOLUME_STEP)
+                    audio_muted = audio_volume <= 0.0
+                    audio.set_master_volume(0.0 if audio_muted else audio_volume)
+                    persist_runtime_settings()
+                    settings_notice_text = "Audio muted" if audio_muted else f"Audio volume: {int(audio_volume * 100)}%"
+                    settings_notice_timer = 1.0
+                elif event.key in (pygame.K_0, pygame.K_KP0):
+                    audio_muted = False
+                    audio_volume = min(AUDIO_VOLUME_MAX, audio_volume + AUDIO_VOLUME_STEP)
+                    audio.set_master_volume(audio_volume)
+                    persist_runtime_settings()
+                    settings_notice_text = f"Audio volume: {int(audio_volume * 100)}%"
+                    settings_notice_timer = 1.0
+                elif event.key == pygame.K_F10:
+                    audio_muted = not audio_muted
+                    audio.set_master_volume(0.0 if audio_muted else audio_volume)
+                    persist_runtime_settings()
+                    settings_notice_text = "Audio muted" if audio_muted else f"Audio unmuted ({int(audio_volume * 100)}%)"
                     settings_notice_timer = 1.0
                 elif event.key == pygame.K_SPACE:
                     if not paused and not show_briefing and not player_dead and not campaign_complete:
@@ -1377,6 +1420,7 @@ def run_runtime(smoke_test: bool = False, data_root: Path | None = None, quicklo
         hud_lines.append(
             f"Reserves L/S/R: {ammo_counts.get('light', 0)}/{ammo_counts.get('shell', 0)}/{ammo_counts.get('rifle', 0)}"
         )
+        hud_lines.append(f"Audio: {'muted' if audio_muted else f'{int(audio_volume * 100)}%'}")
         hud_lines.append(f"Difficulty: {difficulty.id} (F1/F2/F3)")
         if active_mag == 0 and active_reserve > 0 and reload_timer <= 0.0:
             hud_lines.append("Press R to reload")

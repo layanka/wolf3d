@@ -10,7 +10,9 @@ SFX_SAMPLE_RATE = 22050
 class RuntimeAudioManager:
     def __init__(self, project_root: Path) -> None:
         self.enabled = False
+        self.master_volume = 1.0
         self.sounds: dict[str, pygame.mixer.Sound] = {}
+        self.base_volumes: dict[str, float] = {}
         self.step_toggle = False
         sfx_root = project_root / "assets" / "audio" / "sfx"
         try:
@@ -23,15 +25,24 @@ class RuntimeAudioManager:
             self.sounds["step1"] = pygame.mixer.Sound(str(sfx_root / "step1.ogg"))
             self.sounds["step2"] = pygame.mixer.Sound(str(sfx_root / "step2.ogg"))
 
-            self.sounds["shoot"].set_volume(0.46)
-            self.sounds["hit"].set_volume(0.44)
-            self.sounds["down"].set_volume(0.44)
-            self.sounds["door"].set_volume(0.28)
-            self.sounds["step1"].set_volume(0.018)
-            self.sounds["step2"].set_volume(0.018)
+            self.base_volumes = {
+                "shoot": 0.46,
+                "hit": 0.44,
+                "down": 0.44,
+                "door": 0.28,
+                "step1": 0.018,
+                "step2": 0.018,
+            }
+            self.set_master_volume(1.0)
             self.enabled = True
         except (pygame.error, FileNotFoundError):
             self.enabled = False
+
+    def set_master_volume(self, value: float) -> None:
+        self.master_volume = max(0.0, min(1.0, value))
+        for name, sound in self.sounds.items():
+            base = self.base_volumes.get(name, 1.0)
+            sound.set_volume(base * self.master_volume)
 
     def play(self, event_name: str) -> None:
         if not self.enabled:

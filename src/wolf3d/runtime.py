@@ -608,7 +608,7 @@ def load_checkpoint_from_disk(project_root: Path) -> RunCheckpoint | None:
     return None
 
 
-def run_runtime(smoke_test: bool = False, data_root: Path | None = None) -> None:
+def run_runtime(smoke_test: bool = False, data_root: Path | None = None, quickload: bool = False) -> None:
     if smoke_test:
         os.environ["SDL_VIDEODRIVER"] = "dummy"
 
@@ -771,6 +771,18 @@ def run_runtime(smoke_test: bool = False, data_root: Path | None = None) -> None
         checkpoint_notice_text = "Checkpoint restored"
         checkpoint_notice_timer = 1.0
         return True
+
+    if quickload:
+        loaded_checkpoint = load_checkpoint_from_disk(project_root)
+        if loaded_checkpoint is not None:
+            checkpoint = loaded_checkpoint
+            restored = restore_checkpoint_state()
+            if restored:
+                checkpoint_notice_text = "Quick-load restored"
+                checkpoint_notice_timer = 1.0
+        else:
+            checkpoint_notice_text = "No quick-save found"
+            checkpoint_notice_timer = 1.0
 
     running = True
     frames = 0

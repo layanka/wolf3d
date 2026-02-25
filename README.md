@@ -25,6 +25,7 @@ UV_CACHE_DIR=.uv-cache uv run python poc_game.py
 
 ```bash
 UV_CACHE_DIR=.uv-cache uv run python -m src.wolf3d.runtime_entry
+UV_CACHE_DIR=.uv-cache uv run python -m src.wolf3d.runtime_entry --quickload
 ```
 
 Runtime shell data sources:

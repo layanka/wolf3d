@@ -623,6 +623,7 @@ def save_runtime_settings(
     audio_volume: float,
     audio_muted: bool,
     show_perf_hud: bool,
+    difficulty_id: str,
 ) -> bool:
     path = settings_path(project_root)
     path.parent.mkdir(parents=True, exist_ok=True)
@@ -633,6 +634,7 @@ def save_runtime_settings(
         "audio_volume": audio_volume,
         "audio_muted": audio_muted,
         "show_perf_hud": show_perf_hud,
+        "difficulty_id": difficulty_id,
     }
     try:
         with path.open("w", encoding="utf-8") as f:
@@ -718,7 +720,8 @@ def run_runtime(smoke_test: bool = False, data_root: Path | None = None, quicklo
     shots_hit = 0
     kills_total = 0
     level_kills = 0
-    difficulty = DIFFICULTY_PROFILES["normal"]
+    loaded_difficulty_id = str(settings.get("difficulty_id", "normal"))
+    difficulty = DIFFICULTY_PROFILES.get(loaded_difficulty_id, DIFFICULTY_PROFILES["normal"])
     ammo_counts = default_ammo_counts(difficulty.ammo_gain_mult)
     magazine_counts = build_initial_magazines(weapon_cycle, weapons_by_id, ammo_counts)
     reload_timer = 0.0
@@ -759,6 +762,7 @@ def run_runtime(smoke_test: bool = False, data_root: Path | None = None, quicklo
             audio_volume,
             audio_muted,
             show_perf_hud,
+            difficulty.id,
         )
 
     def load_level_state(
@@ -1042,10 +1046,19 @@ def run_runtime(smoke_test: bool = False, data_root: Path | None = None, quicklo
                     checkpoint_notice_timer = 0.0
                 elif event.key == pygame.K_F1:
                     difficulty = DIFFICULTY_PROFILES["easy"]
+                    persist_runtime_settings()
+                    settings_notice_text = "Difficulty: easy"
+                    settings_notice_timer = 1.0
                 elif event.key == pygame.K_F2:
                     difficulty = DIFFICULTY_PROFILES["normal"]
+                    persist_runtime_settings()
+                    settings_notice_text = "Difficulty: normal"
+                    settings_notice_timer = 1.0
                 elif event.key == pygame.K_F3:
                     difficulty = DIFFICULTY_PROFILES["hard"]
+                    persist_runtime_settings()
+                    settings_notice_text = "Difficulty: hard"
+                    settings_notice_timer = 1.0
             elif event.type == pygame.MOUSEBUTTONDOWN and event.button == 1:
                 fire_requested = True
             elif event.type == pygame.MOUSEWHEEL:

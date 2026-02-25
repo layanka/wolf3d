@@ -103,6 +103,7 @@ Expected visuals:
 - Runtime preferences persist to `saves/settings.json` (mouse sensitivity + minimap state/zoom)
 - Runtime preferences also persist audio volume/mute state
 - Runtime preferences also persist perf HUD visibility
+- Runtime preferences also persist selected difficulty preset
 - Sprint now ramps in/out smoothly and applies a short exhaustion lockout at zero stamina
 - Camera now adds subtle movement head-bob, sprint FOV kick, and light hit-impact kick
 - Non-shotgun weapons now lose accuracy while moving/sprinting and during sustained recoil bloom

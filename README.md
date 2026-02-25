@@ -43,6 +43,7 @@ Runtime shell data sources:
 - `M`: toggle minimap
 - `Enter`: dismiss level briefing / advance to next level after level clear (runtime shell)
 - `R`: retry current level after death (runtime shell)
+- `N`: restart campaign after final level completion (runtime shell)
 - `Esc`: quit
 
 Door behavior:
@@ -69,6 +70,8 @@ Expected visuals:
 - Ranged enemies now fire visible projectiles that are blocked by walls/doors
 - Player muzzle flash is now weapon-specific (pistol/smg/shotgun/autorifle)
 - Incoming enemy rounds are shown as orange dots on the minimap
+- Shotgun now uses a 5-pellet spread pattern
+- Combat feedback includes a brief red damage flash and hit-confirm text
 
 Audio source and license notes:
 - [assets/audio/CREDITS.md](/Users/philippe.lefebvre2/Code/testing1/assets/audio/CREDITS.md)

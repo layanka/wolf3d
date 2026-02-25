@@ -51,6 +51,7 @@ Runtime shell data sources:
 - `C`: save a manual checkpoint (runtime shell)
 - `F5`: quick-save checkpoint
 - `F9`: quick-load checkpoint
+- `F11`: delete disk quick-save file
 - `P`: pause/resume gameplay
 - `1/2/3/4`: switch weapon archetype (`pistol` / `smg` / `shotgun` / `autorifle`)
 - `M`: toggle minimap
@@ -100,6 +101,7 @@ Expected visuals:
 - Difficulty now scales incoming damage and ammo gains (drops/pickups/resupply)
 - Manual checkpoints can be restored on death from the same level
 - F5/F9 quick-save now persists to disk (`saves/quicksave.pkl`) and survives restarts
+- F11 deletes `saves/quicksave.pkl` from inside the game runtime
 - Runtime preferences persist to `saves/settings.json` (mouse sensitivity + minimap state/zoom)
 - Runtime preferences also persist audio volume/mute state
 - Runtime preferences also persist perf HUD visibility

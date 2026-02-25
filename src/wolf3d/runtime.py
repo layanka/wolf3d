@@ -372,6 +372,7 @@ def draw_help_overlay(surface: pygame.Surface, font: pygame.font.Font) -> None:
         "1/2/3/4: weapon select",
         "C: save checkpoint",
         "F5/F9: quick save/load",
+        "F11: delete disk quick-save",
         "R: reload (or restore/retry on death)",
         "M: minimap toggle",
         "Z: minimap zoom",
@@ -667,6 +668,17 @@ def load_checkpoint_from_disk(project_root: Path) -> RunCheckpoint | None:
     if isinstance(loaded, RunCheckpoint):
         return loaded
     return None
+
+
+def delete_checkpoint_from_disk(project_root: Path) -> bool:
+    path = quicksave_path(project_root)
+    if not path.exists():
+        return False
+    try:
+        path.unlink()
+    except OSError:
+        return False
+    return True
 
 
 def run_runtime(smoke_test: bool = False, data_root: Path | None = None, quickload: bool = False) -> None:
@@ -967,6 +979,10 @@ def run_runtime(smoke_test: bool = False, data_root: Path | None = None, quicklo
                         if not restored:
                             checkpoint_notice_text = "No quick-save found"
                             checkpoint_notice_timer = 1.0
+                elif event.key == pygame.K_F11:
+                    deleted = delete_checkpoint_from_disk(project_root)
+                    checkpoint_notice_text = "Quick-save deleted" if deleted else "No quick-save to delete"
+                    checkpoint_notice_timer = 1.0
                 elif event.key == pygame.K_RETURN:
                     if show_briefing:
                         show_briefing = False

@@ -20,7 +20,7 @@ from src.wolf3d.content_loader import (
 )
 from src.wolf3d.entities.models import EnemyState, PlayerState, ProjectileState
 from src.wolf3d.gameplay.ai import update_enemies
-from src.wolf3d.gameplay.combat import attempt_fire_multi, normalize_angle
+from src.wolf3d.gameplay.combat import attempt_fire_multi, compute_enemy_shot_distance, normalize_angle
 from src.wolf3d.gameplay.projectiles import update_projectiles
 from src.wolf3d.render.frame import build_frame_snapshot
 from src.wolf3d.ui.hud import format_hud_lines
@@ -342,6 +342,25 @@ def draw_help_overlay(surface: pygame.Surface, font: pygame.font.Font) -> None:
         color = (245, 210, 120) if idx == 0 else (225, 225, 230)
         text_surface = font.render(line, True, color)
         surface.blit(text_surface, (18, 22 + idx * 12))
+
+
+def enemy_in_sights(
+    player: PlayerState,
+    enemies: list[EnemyState],
+    world: WorldSimulation,
+    max_range: float,
+) -> EnemyState | None:
+    ray_hit = world.cast_ray(player.x, player.y, player.angle)
+    nearest: EnemyState | None = None
+    nearest_distance = float("inf")
+    for enemy in enemies:
+        distance = compute_enemy_shot_distance(player, enemy, ray_hit.depth, max_range)
+        if distance is None:
+            continue
+        if distance < nearest_distance:
+            nearest_distance = distance
+            nearest = enemy
+    return nearest
 
 
 def format_duration(seconds: float) -> str:
@@ -847,6 +866,7 @@ def run_runtime(smoke_test: bool = False, data_root: Path | None = None) -> None
         )
 
         active_weapon = weapons_by_id[weapon_cycle[current_weapon_idx]]
+        target_enemy = enemy_in_sights(player, enemies, world, active_weapon.range)
         ammo_type = active_weapon.ammo_type
         weapon_ammo = ammo_counts.get(ammo_type, 0)
         can_fire = weapon_ammo > 0
@@ -960,6 +980,8 @@ def run_runtime(smoke_test: bool = False, data_root: Path | None = None) -> None
                 hud_lines.append("You were eliminated: press R to restore checkpoint")
             else:
                 hud_lines.append("You were eliminated: press R to retry level")
+        elif target_enemy is not None:
+            hud_lines.append("Target in sights")
         hud_lines.append(objective_status_line(objective_state, enemies))
         if active_projectiles:
             hud_lines.append(f"Incoming: {len(active_projectiles)}")
@@ -1002,7 +1024,12 @@ def run_runtime(smoke_test: bool = False, data_root: Path | None = None) -> None
             surface.blit(hud_surface, (6, internal_h - 36 + i * 10))
 
         cx, cy = internal_w // 2, internal_h // 2
-        crosshair_color = (245, 190, 75) if snapshot.door_in_front else (245, 245, 245)
+        if target_enemy is not None:
+            crosshair_color = (245, 90, 90)
+        elif snapshot.door_in_front:
+            crosshair_color = (245, 190, 75)
+        else:
+            crosshair_color = (245, 245, 245)
         pygame.draw.line(surface, crosshair_color, (cx - 4, cy), (cx + 4, cy), 1)
         pygame.draw.line(surface, crosshair_color, (cx, cy - 4), (cx, cy + 4), 1)
         draw_weapon_vfx(surface, weapon_fx_id, weapon_fx_timer)

@@ -89,6 +89,7 @@ Expected visuals:
 - Difficulty now scales incoming damage and ammo gains (drops/pickups/resupply)
 - Manual checkpoints can be restored on death from the same level
 - HUD now provides objective direction and distance guidance
+- Crosshair now turns red when an enemy is in direct line of fire
 
 Audio source and license notes:
 - [assets/audio/CREDITS.md](/Users/philippe.lefebvre2/Code/testing1/assets/audio/CREDITS.md)

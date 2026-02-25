@@ -4,6 +4,7 @@ import math
 import os
 import pickle
 import random
+import json
 from copy import deepcopy
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -50,6 +51,7 @@ MOVE_SPREAD_RAD = 0.012
 SPRINT_SPREAD_RAD = 0.02
 RECOIL_SPREAD_MAX_RAD = 0.055
 QUICKSAVE_FILE = "quicksave.pkl"
+SETTINGS_FILE = "settings.json"
 MOUSE_SENSITIVITY_MIN = 0.0012
 MOUSE_SENSITIVITY_MAX = 0.0065
 MOUSE_SENSITIVITY_STEP = 0.0003
@@ -587,6 +589,43 @@ def quicksave_path(project_root: Path) -> Path:
     return project_root / "saves" / QUICKSAVE_FILE
 
 
+def settings_path(project_root: Path) -> Path:
+    return project_root / "saves" / SETTINGS_FILE
+
+
+def load_runtime_settings(project_root: Path) -> dict[str, object]:
+    path = settings_path(project_root)
+    if not path.exists():
+        return {}
+    try:
+        with path.open("r", encoding="utf-8") as f:
+            raw = json.load(f)
+    except (OSError, json.JSONDecodeError):
+        return {}
+    return raw if isinstance(raw, dict) else {}
+
+
+def save_runtime_settings(
+    project_root: Path,
+    mouse_sensitivity: float,
+    show_minimap: bool,
+    minimap_scale_idx: int,
+) -> bool:
+    path = settings_path(project_root)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    payload = {
+        "mouse_sensitivity": mouse_sensitivity,
+        "show_minimap": show_minimap,
+        "minimap_scale_idx": minimap_scale_idx,
+    }
+    try:
+        with path.open("w", encoding="utf-8") as f:
+            json.dump(payload, f, indent=2)
+    except OSError:
+        return False
+    return True
+
+
 def save_checkpoint_to_disk(project_root: Path, checkpoint: RunCheckpoint) -> bool:
     path = quicksave_path(project_root)
     path.parent.mkdir(parents=True, exist_ok=True)
@@ -638,10 +677,13 @@ def run_runtime(smoke_test: bool = False, data_root: Path | None = None, quicklo
     clock = pygame.time.Clock()
     pygame.display.set_caption("Wolf3D Real Runtime (Campaign Shell)")
 
+    settings = load_runtime_settings(project_root)
+
     fov = math.radians(BASE_FOV_DEG)
-    show_minimap = True
+    show_minimap = bool(settings.get("show_minimap", True))
     minimap_scale_levels = (6, 8, 12)
-    minimap_scale_idx = 1
+    minimap_scale_idx = int(settings.get("minimap_scale_idx", 1))
+    minimap_scale_idx = max(0, min(len(minimap_scale_levels) - 1, minimap_scale_idx))
     shot_cooldown = 0.0
     current_weapon_idx = 0
     unlocked_weapons = {weapon_cycle[0]}
@@ -674,7 +716,8 @@ def run_runtime(smoke_test: bool = False, data_root: Path | None = None, quicklo
     show_help = False
     paused = False
     mouse_look = False
-    mouse_sensitivity = 0.0028
+    loaded_sens = float(settings.get("mouse_sensitivity", 0.0028))
+    mouse_sensitivity = max(MOUSE_SENSITIVITY_MIN, min(MOUSE_SENSITIVITY_MAX, loaded_sens))
     stamina = STAMINA_MAX
     sprint_exhausted = False
     sprint_blend = 0.0
@@ -813,22 +856,26 @@ def run_runtime(smoke_test: bool = False, data_root: Path | None = None, quicklo
                     running = False
                 elif event.key == pygame.K_m:
                     show_minimap = not show_minimap
+                    _ = save_runtime_settings(project_root, mouse_sensitivity, show_minimap, minimap_scale_idx)
                 elif event.key == pygame.K_h:
                     show_help = not show_help
                 elif event.key == pygame.K_p:
                     paused = not paused
                 elif event.key == pygame.K_z:
                     minimap_scale_idx = (minimap_scale_idx + 1) % len(minimap_scale_levels)
+                    _ = save_runtime_settings(project_root, mouse_sensitivity, show_minimap, minimap_scale_idx)
                 elif event.key == pygame.K_TAB:
                     mouse_look = not mouse_look
                     pygame.event.set_grab(mouse_look)
                     pygame.mouse.set_visible(not mouse_look)
                 elif event.key in (pygame.K_MINUS, pygame.K_KP_MINUS):
                     mouse_sensitivity = max(MOUSE_SENSITIVITY_MIN, mouse_sensitivity - MOUSE_SENSITIVITY_STEP)
+                    _ = save_runtime_settings(project_root, mouse_sensitivity, show_minimap, minimap_scale_idx)
                     settings_notice_text = f"Mouse sensitivity: {mouse_sensitivity:.4f}"
                     settings_notice_timer = 1.0
                 elif event.key in (pygame.K_EQUALS, pygame.K_PLUS, pygame.K_KP_PLUS):
                     mouse_sensitivity = min(MOUSE_SENSITIVITY_MAX, mouse_sensitivity + MOUSE_SENSITIVITY_STEP)
+                    _ = save_runtime_settings(project_root, mouse_sensitivity, show_minimap, minimap_scale_idx)
                     settings_notice_text = f"Mouse sensitivity: {mouse_sensitivity:.4f}"
                     settings_notice_timer = 1.0
                 elif event.key == pygame.K_SPACE:

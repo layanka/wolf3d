@@ -43,6 +43,7 @@ Runtime shell data sources:
 - `-` / `=`: decrease/increase mouse sensitivity
 - `9` / `0`: decrease/increase audio volume
 - `F10`: mute/unmute audio
+- `F6`: toggle performance HUD (FPS/frame-time/counters)
 - `Mouse wheel` or `[` `]`: cycle through unlocked weapons
 - `Space`: open/close door in front of you
 - `F` or left mouse click: shoot
@@ -101,6 +102,7 @@ Expected visuals:
 - F5/F9 quick-save now persists to disk (`saves/quicksave.pkl`) and survives restarts
 - Runtime preferences persist to `saves/settings.json` (mouse sensitivity + minimap state/zoom)
 - Runtime preferences also persist audio volume/mute state
+- Runtime preferences also persist perf HUD visibility
 - Sprint now ramps in/out smoothly and applies a short exhaustion lockout at zero stamina
 - Camera now adds subtle movement head-bob, sprint FOV kick, and light hit-impact kick
 - Non-shotgun weapons now lose accuracy while moving/sprinting and during sustained recoil bloom

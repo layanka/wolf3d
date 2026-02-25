@@ -376,6 +376,7 @@ def draw_help_overlay(surface: pygame.Surface, font: pygame.font.Font) -> None:
         "M: minimap toggle",
         "Z: minimap zoom",
         "F1/F2/F3: difficulty",
+        "F6: toggle perf HUD",
         "H: toggle help",
         "ESC: quit",
     ]
@@ -621,6 +622,7 @@ def save_runtime_settings(
     minimap_scale_idx: int,
     audio_volume: float,
     audio_muted: bool,
+    show_perf_hud: bool,
 ) -> bool:
     path = settings_path(project_root)
     path.parent.mkdir(parents=True, exist_ok=True)
@@ -630,6 +632,7 @@ def save_runtime_settings(
         "minimap_scale_idx": minimap_scale_idx,
         "audio_volume": audio_volume,
         "audio_muted": audio_muted,
+        "show_perf_hud": show_perf_hud,
     }
     try:
         with path.open("w", encoding="utf-8") as f:
@@ -728,6 +731,7 @@ def run_runtime(smoke_test: bool = False, data_root: Path | None = None, quicklo
     settings_notice_timer = 0.0
     settings_notice_text = ""
     show_help = False
+    show_perf_hud = bool(settings.get("show_perf_hud", False))
     paused = False
     mouse_look = False
     loaded_sens = float(settings.get("mouse_sensitivity", 0.0028))
@@ -754,6 +758,7 @@ def run_runtime(smoke_test: bool = False, data_root: Path | None = None, quicklo
             minimap_scale_idx,
             audio_volume,
             audio_muted,
+            show_perf_hud,
         )
 
     def load_level_state(
@@ -888,6 +893,11 @@ def run_runtime(smoke_test: bool = False, data_root: Path | None = None, quicklo
                     persist_runtime_settings()
                 elif event.key == pygame.K_h:
                     show_help = not show_help
+                elif event.key == pygame.K_F6:
+                    show_perf_hud = not show_perf_hud
+                    persist_runtime_settings()
+                    settings_notice_text = "Perf HUD: on" if show_perf_hud else "Perf HUD: off"
+                    settings_notice_timer = 1.0
                 elif event.key == pygame.K_p:
                     paused = not paused
                 elif event.key == pygame.K_z:
@@ -1438,6 +1448,13 @@ def run_runtime(smoke_test: bool = False, data_root: Path | None = None, quicklo
             hud_lines.append(checkpoint_notice_text)
         if settings_notice_timer > 0.0:
             hud_lines.append(settings_notice_text)
+        if show_perf_hud:
+            alive_enemies = sum(1 for enemy in enemies if enemy.alive)
+            open_doors = sum(1 for door in world.doors.values() if door.open_amount > 0.05)
+            hud_lines.append(f"Perf: {clock.get_fps():.1f} fps | {dt * 1000.0:.1f} ms")
+            hud_lines.append(
+                f"Counts: enemies {alive_enemies}/{len(enemies)} | proj {len(active_projectiles)} | doors open {open_doors}"
+            )
         nav_hint = objective_nav_hint(player, current_objective_target(objective_state, enemies))
         if nav_hint is not None:
             hud_lines.append(nav_hint)

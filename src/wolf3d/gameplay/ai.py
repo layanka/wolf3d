@@ -3,7 +3,8 @@ from __future__ import annotations
 import math
 
 from src.wolf3d.contracts import EnemyType
-from src.wolf3d.entities.models import EnemyState, PlayerState
+from src.wolf3d.entities.models import EnemyState, PlayerState, ProjectileState
+from src.wolf3d.gameplay.projectiles import build_enemy_projectile
 from src.wolf3d.world.simulation import WorldSimulation
 
 ENEMY_RADIUS = 0.12
@@ -16,9 +17,11 @@ def update_enemies(
     enemy_defs: dict[str, EnemyType],
     world: WorldSimulation,
     dt: float,
-) -> int:
-    """Advance enemy movement/attacks and return total damage dealt to player."""
-    total_damage = 0
+) -> tuple[int, list[ProjectileState]]:
+    """Advance enemy behavior and return melee damage plus spawned projectiles."""
+    melee_damage = 0
+    spawned_projectiles: list[ProjectileState] = []
+
     for enemy in enemies:
         if not enemy.alive:
             continue
@@ -63,12 +66,50 @@ def update_enemies(
             if has_los and distance > spec.attack_range * 0.9:
                 _move_enemy(world, player, enemy, toward_x, toward_y, spec.move_speed, dt)
 
-        if has_los and distance <= spec.attack_range and enemy.attack_cooldown <= 0.0:
-            total_damage += spec.attack_damage
-            # Slight cadence variation keeps fights less robotic.
-            enemy.attack_cooldown = 0.7 + (len(spec.id) % 3) * 0.1
+        if not has_los or distance > spec.attack_range or enemy.attack_cooldown > 0.0:
+            continue
 
-    return total_damage
+        if behavior == "rush_melee":
+            melee_damage += spec.attack_damage
+            enemy.attack_cooldown = 0.85
+            continue
+
+        spread = _projectile_spread(enemy)
+        projectile_speed = _projectile_speed(spec)
+        projectile = build_enemy_projectile(
+            x=enemy.x,
+            y=enemy.y,
+            target_x=player.x,
+            target_y=player.y,
+            speed=projectile_speed,
+            damage=spec.attack_damage,
+            max_range=spec.attack_range + 1.4,
+            spread_radians=spread,
+        )
+        spawned_projectiles.append(projectile)
+        enemy.attack_cooldown = _attack_cadence(spec)
+
+    return melee_damage, spawned_projectiles
+
+
+def _attack_cadence(spec: EnemyType) -> float:
+    if spec.behavior == "boss_phase":
+        return 0.52
+    if spec.behavior == "aggressive_flank":
+        return 0.62
+    return 0.75
+
+
+def _projectile_speed(spec: EnemyType) -> float:
+    if spec.behavior == "boss_phase":
+        return 8.2
+    if spec.behavior == "aggressive_flank":
+        return 7.3
+    return 6.2
+
+
+def _projectile_spread(enemy: EnemyState) -> float:
+    return 0.04 * math.sin(enemy.behavior_phase * 3.2 + len(enemy.type_id))
 
 
 def _has_line_of_sight(world: WorldSimulation, x0: float, y0: float, x1: float, y1: float, distance: float) -> bool:

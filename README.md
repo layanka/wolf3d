@@ -66,6 +66,8 @@ Expected visuals:
 - File-based SFX (`OGG`) for shooting, hits, enemy down, door, and footsteps
 - Footsteps are intentionally low-volume/subtle while moving
 - Weapon pickups are shown as yellow dots on the minimap and unlock additional weapon keys
+- Ranged enemies now fire visible projectiles that are blocked by walls/doors
+- Player muzzle flash is now weapon-specific (pistol/smg/shotgun/autorifle)
 
 Audio source and license notes:
 - [assets/audio/CREDITS.md](/Users/philippe.lefebvre2/Code/testing1/assets/audio/CREDITS.md)

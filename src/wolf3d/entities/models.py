@@ -33,6 +33,18 @@ class EnemyState:
     behavior_phase: float = 0.0
 
 
+@dataclass
+class ProjectileState:
+    x: float
+    y: float
+    dir_x: float
+    dir_y: float
+    speed: float
+    damage: int
+    remaining_range: float
+    from_enemy: bool = True
+
+
 @dataclass(frozen=True)
 class RayHit:
     depth: float

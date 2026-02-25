@@ -15,9 +15,10 @@ from src.wolf3d.content_loader import (
     load_weapon_types,
     validate_cross_refs,
 )
-from src.wolf3d.entities.models import EnemyState, PlayerState
+from src.wolf3d.entities.models import EnemyState, PlayerState, ProjectileState
 from src.wolf3d.gameplay.ai import update_enemies
 from src.wolf3d.gameplay.combat import attempt_fire_multi, normalize_angle
+from src.wolf3d.gameplay.projectiles import update_projectiles
 from src.wolf3d.render.frame import build_frame_snapshot
 from src.wolf3d.ui.hud import format_hud_lines
 from src.wolf3d.world.simulation import WorldSimulation
@@ -60,6 +61,61 @@ def render_enemies(
                 pygame.draw.line(surface, color, (col, top), (col, bottom))
 
 
+def render_projectiles(
+    surface: pygame.Surface,
+    player: PlayerState,
+    projectiles: list[ProjectileState],
+    fov: float,
+    depth_buffer: list[float],
+) -> None:
+    w, h = surface.get_width(), surface.get_height()
+    for projectile in projectiles:
+        dx = projectile.x - player.x
+        dy = projectile.y - player.y
+        distance = math.hypot(dx, dy)
+        if distance <= 0.08:
+            continue
+
+        angle = normalize_angle(math.atan2(dy, dx) - player.angle)
+        if abs(angle) > fov * 0.6:
+            continue
+
+        screen_x = int((angle / fov + 0.5) * w)
+        if screen_x < 0 or screen_x >= w or distance >= depth_buffer[screen_x]:
+            continue
+
+        size = max(1, min(5, int(7 / (distance + 0.2))))
+        y = h // 2
+        color = (250, 130, 70)
+        pygame.draw.circle(surface, color, (screen_x, y), size)
+
+
+def draw_weapon_vfx(surface: pygame.Surface, weapon_id: str, timer: float) -> None:
+    if timer <= 0.0:
+        return
+
+    cx, cy = surface.get_width() // 2, surface.get_height() // 2
+    if weapon_id == "shotgun":
+        color = (255, 185, 90)
+        radius = 16
+        thickness = 3
+    elif weapon_id == "smg":
+        color = (180, 225, 255)
+        radius = 9
+        thickness = 1
+    elif weapon_id == "autorifle":
+        color = (240, 230, 120)
+        radius = 12
+        thickness = 2
+    else:
+        color = (245, 245, 235)
+        radius = 10
+        thickness = 2
+
+    pygame.draw.circle(surface, color, (cx, cy), radius, thickness)
+    pygame.draw.line(surface, color, (cx - radius + 1, cy), (cx + radius - 1, cy), 1)
+
+
 def run_runtime(smoke_test: bool = False, data_root: Path | None = None) -> None:
     if smoke_test:
         os.environ["SDL_VIDEODRIVER"] = "dummy"
@@ -91,6 +147,9 @@ def run_runtime(smoke_test: bool = False, data_root: Path | None = None) -> None
     unlocked_weapons = {weapon_cycle[0]}
     show_briefing = True
     player_dead = False
+    active_projectiles: list[ProjectileState] = []
+    weapon_fx_timer = 0.0
+    weapon_fx_id = weapon_cycle[0]
 
     level_idx = 0
 
@@ -160,6 +219,7 @@ def run_runtime(smoke_test: bool = False, data_root: Path | None = None) -> None
                     current_weapon_idx = 0
                     show_briefing = True
                     player_dead = False
+                    active_projectiles.clear()
             elif event.type == pygame.MOUSEBUTTONDOWN and event.button == 1:
                 fire_requested = True
 
@@ -178,8 +238,15 @@ def run_runtime(smoke_test: bool = False, data_root: Path | None = None) -> None
         world.update_doors(player, dt)
         if not player_dead:
             world.move_player(player, forward, strafe, dt)
-        enemy_damage = 0 if show_briefing or player_dead else update_enemies(player, enemies, enemy_types, world, dt)
-        player.health = max(0, player.health - enemy_damage)
+        melee_damage = 0
+        spawned_projectiles: list[ProjectileState] = []
+        if not show_briefing and not player_dead:
+            melee_damage, spawned_projectiles = update_enemies(player, enemies, enemy_types, world, dt)
+        if spawned_projectiles:
+            active_projectiles.extend(spawned_projectiles)
+
+        active_projectiles, projectile_damage = update_projectiles(world, player, active_projectiles, dt)
+        player.health = max(0, player.health - melee_damage - projectile_damage)
         player_dead = player.health <= 0
 
         for pickup in pickups[:]:
@@ -205,7 +272,17 @@ def run_runtime(smoke_test: bool = False, data_root: Path | None = None) -> None
             )
             shot_cooldown = fire.next_cooldown
             _ = route_simulation_audio_events(False, fire)
+            weapon_fx_id = active_weapon.id
+            if active_weapon.id == "smg":
+                weapon_fx_timer = 0.045
+            elif active_weapon.id == "shotgun":
+                weapon_fx_timer = 0.11
+            elif active_weapon.id == "autorifle":
+                weapon_fx_timer = 0.075
+            else:
+                weapon_fx_timer = 0.065
         shot_cooldown = max(0.0, shot_cooldown - dt)
+        weapon_fx_timer = max(0.0, weapon_fx_timer - dt)
 
         level_cleared = all(not e.alive for e in enemies)
         if level_cleared and not player_dead and next_level_requested and level_idx < len(campaign) - 1:
@@ -214,6 +291,7 @@ def run_runtime(smoke_test: bool = False, data_root: Path | None = None) -> None
             shot_cooldown = 0.0
             current_weapon_idx = 0
             show_briefing = True
+            active_projectiles.clear()
 
         surface.fill((35, 35, 40))
         pygame.draw.rect(surface, (70, 78, 102), (0, internal_h // 2, internal_w, internal_h // 2))
@@ -237,6 +315,7 @@ def run_runtime(smoke_test: bool = False, data_root: Path | None = None) -> None
             pygame.draw.line(surface, color, (col, top), (col, top + wall_h))
 
         render_enemies(surface, enemies, player, fov, depth_buffer)
+        render_projectiles(surface, player, active_projectiles, fov, depth_buffer)
 
         snapshot = build_frame_snapshot(player, enemies, world, shot_cooldown, active_weapon.label)
         hud_lines = [f"Level {level_idx + 1}/{len(campaign)}: {level_title}"] + format_hud_lines(snapshot)
@@ -246,6 +325,8 @@ def run_runtime(smoke_test: bool = False, data_root: Path | None = None) -> None
             hud_lines.append("Mission briefing active: ENTER to deploy")
         if player_dead:
             hud_lines.append("You were eliminated: press R to retry level")
+        if active_projectiles:
+            hud_lines.append(f"Incoming: {len(active_projectiles)}")
         for i, line in enumerate(hud_lines):
             color = (245, 210, 120) if "Level clear" in line else (220, 220, 225)
             hud_surface = font.render(line, True, color)
@@ -255,6 +336,7 @@ def run_runtime(smoke_test: bool = False, data_root: Path | None = None) -> None
         crosshair_color = (245, 190, 75) if snapshot.door_in_front else (245, 245, 245)
         pygame.draw.line(surface, crosshair_color, (cx - 4, cy), (cx + 4, cy), 1)
         pygame.draw.line(surface, crosshair_color, (cx, cy - 4), (cx, cy + 4), 1)
+        draw_weapon_vfx(surface, weapon_fx_id, weapon_fx_timer)
 
         if show_minimap:
             scale = 8

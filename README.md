@@ -76,6 +76,8 @@ Expected visuals:
 - Combat feedback includes a brief red damage flash and hit-confirm text
 - HUD/runtime now tracks level+campaign time, kills, and shooting accuracy
 - Weapons now consume ammo by ammo type, with pickup and between-level ammo gains
+- Defeated enemies drop ammo packs (shown as cyan dots on minimap)
+- Runtime auto-switches to another unlocked weapon when current ammo is empty
 
 Audio source and license notes:
 - [assets/audio/CREDITS.md](/Users/philippe.lefebvre2/Code/testing1/assets/audio/CREDITS.md)

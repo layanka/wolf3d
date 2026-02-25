@@ -31,6 +31,7 @@ class EnemyState:
     alive: bool = True
     attack_cooldown: float = 0.0
     behavior_phase: float = 0.0
+    loot_dropped: bool = False
 
 
 @dataclass

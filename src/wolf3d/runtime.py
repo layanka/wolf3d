@@ -245,6 +245,39 @@ def pickup_ammo_bonus(weapon_id: str) -> dict[str, int]:
     return {"light": 12}
 
 
+def enemy_drop_ammo(enemy_type_id: str) -> dict[str, int]:
+    if enemy_type_id == "guard":
+        return {"light": 8}
+    if enemy_type_id == "assault":
+        return {"rifle": 12}
+    if enemy_type_id == "hound":
+        return {"light": 4}
+    if enemy_type_id == "commander":
+        return {"rifle": 24, "shell": 6}
+    return {"light": 5}
+
+
+def choose_fallback_weapon(
+    current_idx: int,
+    weapon_cycle: list[str],
+    unlocked_weapons: set[str],
+    weapons_by_id: dict[str, object],
+    ammo_counts: dict[str, int],
+) -> int:
+    current_id = weapon_cycle[current_idx]
+    current_ammo_type = weapons_by_id[current_id].ammo_type
+    if ammo_counts.get(current_ammo_type, 0) > 0:
+        return current_idx
+
+    for idx, weapon_id in enumerate(weapon_cycle):
+        if weapon_id not in unlocked_weapons:
+            continue
+        ammo_type = weapons_by_id[weapon_id].ammo_type
+        if ammo_counts.get(ammo_type, 0) > 0:
+            return idx
+    return current_idx
+
+
 def run_runtime(smoke_test: bool = False, data_root: Path | None = None) -> None:
     if smoke_test:
         os.environ["SDL_VIDEODRIVER"] = "dummy"
@@ -294,7 +327,9 @@ def run_runtime(smoke_test: bool = False, data_root: Path | None = None) -> None
     level_idx = 0
     objective_state = build_objective_state(campaign[level_idx].id)
 
-    def load_level_state(index: int) -> tuple[WorldSimulation, PlayerState, list[EnemyState], list[dict[str, float | str]], str]:
+    def load_level_state(
+        index: int,
+    ) -> tuple[WorldSimulation, PlayerState, list[EnemyState], list[dict[str, float | str]], list[dict[str, float | str]], str]:
         campaign_level = campaign[index]
         spec = level_specs[campaign_level.id]
         tile_map = load_level_map(data_root, spec)
@@ -316,10 +351,10 @@ def run_runtime(smoke_test: bool = False, data_root: Path | None = None) -> None
         pickups: list[dict[str, float | str]] = []
         for pickup in spec.weapon_pickups:
             pickups.append({"type": str(pickup["type"]), "x": float(pickup["x"]), "y": float(pickup["y"])})
-        return world, player, enemies, pickups, campaign_level.title
+        ammo_pickups: list[dict[str, float | str]] = []
+        return world, player, enemies, pickups, ammo_pickups, campaign_level.title
 
-    world, player, enemies, pickups, level_title = load_level_state(level_idx)
-    prev_alive_count = sum(1 for enemy in enemies if enemy.alive)
+    world, player, enemies, pickups, ammo_pickups, level_title = load_level_state(level_idx)
 
     running = True
     frames = 0
@@ -359,7 +394,7 @@ def run_runtime(smoke_test: bool = False, data_root: Path | None = None) -> None
                 elif event.key == pygame.K_4 and len(weapon_cycle) >= 4 and weapon_cycle[3] in unlocked_weapons:
                     current_weapon_idx = 3
                 elif event.key == pygame.K_r and player_dead:
-                    world, player, enemies, pickups, level_title = load_level_state(level_idx)
+                    world, player, enemies, pickups, ammo_pickups, level_title = load_level_state(level_idx)
                     shot_cooldown = 0.0
                     current_weapon_idx = 0
                     show_briefing = True
@@ -369,11 +404,10 @@ def run_runtime(smoke_test: bool = False, data_root: Path | None = None) -> None
                     objective_state = build_objective_state(campaign[level_idx].id)
                     level_elapsed = 0.0
                     level_kills = 0
-                    prev_alive_count = sum(1 for enemy in enemies if enemy.alive)
                     dry_fire_timer = 0.0
                 elif event.key == pygame.K_n and campaign_complete:
                     level_idx = 0
-                    world, player, enemies, pickups, level_title = load_level_state(level_idx)
+                    world, player, enemies, pickups, ammo_pickups, level_title = load_level_state(level_idx)
                     shot_cooldown = 0.0
                     current_weapon_idx = 0
                     unlocked_weapons = {weapon_cycle[0]}
@@ -388,7 +422,6 @@ def run_runtime(smoke_test: bool = False, data_root: Path | None = None) -> None
                     shots_hit = 0
                     kills_total = 0
                     level_kills = 0
-                    prev_alive_count = sum(1 for enemy in enemies if enemy.alive)
                     ammo_counts = default_ammo_counts()
                     dry_fire_timer = 0.0
             elif event.type == pygame.MOUSEBUTTONDOWN and event.button == 1:
@@ -438,12 +471,34 @@ def run_runtime(smoke_test: bool = False, data_root: Path | None = None) -> None
                 if objective_state.keycard_weapon_id == pickup_type:
                     objective_state.keycard_collected = True
                 pickups.remove(pickup)
+        for ammo_pickup in ammo_pickups[:]:
+            dx = float(ammo_pickup["x"]) - player.x
+            dy = float(ammo_pickup["y"]) - player.y
+            if dx * dx + dy * dy <= 0.35 * 0.35:
+                pickup_ammo_type = str(ammo_pickup["ammo_type"])
+                pickup_amount = int(ammo_pickup["amount"])
+                ammo_counts[pickup_ammo_type] = ammo_counts.get(pickup_ammo_type, 0) + pickup_amount
+                ammo_pickups.remove(ammo_pickup)
+
+        for enemy in enemies:
+            if enemy.alive or enemy.loot_dropped:
+                continue
+            enemy.loot_dropped = True
+            for ammo_type, amount in enemy_drop_ammo(enemy.type_id).items():
+                ammo_pickups.append(
+                    {"ammo_type": ammo_type, "amount": float(amount), "x": enemy.x, "y": enemy.y}
+                )
+            kills_total += 1
+            level_kills += 1
 
         if interact_requested and not show_briefing and not player_dead and not campaign_complete:
             process_objective_interaction(player, objective_state, enemies)
 
         while weapon_cycle[current_weapon_idx] not in unlocked_weapons and current_weapon_idx > 0:
             current_weapon_idx -= 1
+        current_weapon_idx = choose_fallback_weapon(
+            current_weapon_idx, weapon_cycle, unlocked_weapons, weapons_by_id, ammo_counts
+        )
 
         active_weapon = weapons_by_id[weapon_cycle[current_weapon_idx]]
         ammo_type = active_weapon.ammo_type
@@ -490,18 +545,11 @@ def run_runtime(smoke_test: bool = False, data_root: Path | None = None) -> None
         damage_flash_timer = max(0.0, damage_flash_timer - dt)
         hit_confirm_timer = max(0.0, hit_confirm_timer - dt)
         dry_fire_timer = max(0.0, dry_fire_timer - dt)
-        alive_count = sum(1 for enemy in enemies if enemy.alive)
-        if alive_count < prev_alive_count:
-            killed = prev_alive_count - alive_count
-            kills_total += killed
-            level_kills += killed
-        prev_alive_count = alive_count
-
         level_cleared = objective_complete(objective_state, enemies)
         if level_cleared and not player_dead and next_level_requested:
             if level_idx < len(campaign) - 1:
                 level_idx += 1
-                world, player, enemies, pickups, level_title = load_level_state(level_idx)
+                world, player, enemies, pickups, ammo_pickups, level_title = load_level_state(level_idx)
                 shot_cooldown = 0.0
                 current_weapon_idx = 0
                 show_briefing = True
@@ -512,7 +560,6 @@ def run_runtime(smoke_test: bool = False, data_root: Path | None = None) -> None
                 ammo_counts["rifle"] = ammo_counts.get("rifle", 0) + 10
                 level_elapsed = 0.0
                 level_kills = 0
-                prev_alive_count = sum(1 for enemy in enemies if enemy.alive)
             else:
                 campaign_complete = True
 
@@ -562,6 +609,9 @@ def run_runtime(smoke_test: bool = False, data_root: Path | None = None) -> None
             accuracy = int((shots_hit / shots_fired) * 100)
             hud_lines.append(f"Accuracy: {accuracy}%")
         hud_lines.append(f"Ammo ({ammo_type}): {ammo_counts.get(ammo_type, 0)}")
+        hud_lines.append(
+            f"Reserves L/S/R: {ammo_counts.get('light', 0)}/{ammo_counts.get('shell', 0)}/{ammo_counts.get('rifle', 0)}"
+        )
         if ammo_counts.get(ammo_type, 0) <= 3:
             hud_lines.append("Low ammo")
         if dry_fire_timer > 0.0:
@@ -603,6 +653,10 @@ def run_runtime(smoke_test: bool = False, data_root: Path | None = None) -> None
                 wx = int(pad + float(pickup["x"]) * scale)
                 wy = int(pad + float(pickup["y"]) * scale)
                 pygame.draw.circle(surface, (210, 180, 50), (wx, wy), 2)
+            for ammo_pickup in ammo_pickups:
+                ax = int(pad + float(ammo_pickup["x"]) * scale)
+                ay = int(pad + float(ammo_pickup["y"]) * scale)
+                pygame.draw.circle(surface, (120, 230, 235), (ax, ay), 1)
             for projectile in active_projectiles:
                 sx = int(pad + projectile.x * scale)
                 sy = int(pad + projectile.y * scale)

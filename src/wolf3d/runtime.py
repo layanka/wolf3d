@@ -76,6 +76,7 @@ class RunCheckpoint:
     kills_total: int
     level_kills: int
     level_title: str
+    difficulty_id: str
 
 
 DIFFICULTY_PROFILES: dict[str, DifficultyProfile] = {
@@ -275,7 +276,10 @@ def format_duration(seconds: float) -> str:
 def _scale_ammo(values: dict[str, int], ammo_gain_mult: float) -> dict[str, int]:
     scaled: dict[str, int] = {}
     for ammo_type, amount in values.items():
-        scaled[ammo_type] = max(1, int(round(amount * ammo_gain_mult)))
+        if amount <= 0:
+            scaled[ammo_type] = 0
+        else:
+            scaled[ammo_type] = max(1, int(round(amount * ammo_gain_mult)))
     return scaled
 
 
@@ -361,6 +365,7 @@ def build_checkpoint(
     kills_total: int,
     level_kills: int,
     level_title: str,
+    difficulty_id: str,
 ) -> RunCheckpoint:
     return RunCheckpoint(
         level_idx=level_idx,
@@ -383,6 +388,7 @@ def build_checkpoint(
         kills_total=kills_total,
         level_kills=level_kills,
         level_title=level_title,
+        difficulty_id=difficulty_id,
     )
 
 
@@ -538,6 +544,7 @@ def run_runtime(smoke_test: bool = False, data_root: Path | None = None) -> None
                         kills_total = checkpoint.kills_total
                         level_kills = checkpoint.level_kills
                         level_title = checkpoint.level_title
+                        difficulty = DIFFICULTY_PROFILES.get(checkpoint.difficulty_id, DIFFICULTY_PROFILES["normal"])
                         show_briefing = False
                     else:
                         world, player, enemies, pickups, ammo_pickups, health_pickups, level_title = load_level_state(level_idx)
@@ -686,6 +693,7 @@ def run_runtime(smoke_test: bool = False, data_root: Path | None = None) -> None
                 kills_total=kills_total,
                 level_kills=level_kills,
                 level_title=level_title,
+                difficulty_id=difficulty.id,
             )
             checkpoint_notice_timer = 1.0
 

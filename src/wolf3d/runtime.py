@@ -468,6 +468,7 @@ def run_runtime(smoke_test: bool = False, data_root: Path | None = None) -> None
     checkpoint: RunCheckpoint | None = None
     checkpoint_notice_timer = 0.0
     show_help = False
+    paused = False
 
     level_idx = 0
     objective_state = build_objective_state(campaign[level_idx].id)
@@ -530,8 +531,10 @@ def run_runtime(smoke_test: bool = False, data_root: Path | None = None) -> None
                     show_minimap = not show_minimap
                 elif event.key == pygame.K_h:
                     show_help = not show_help
+                elif event.key == pygame.K_p:
+                    paused = not paused
                 elif event.key == pygame.K_SPACE:
-                    if not show_briefing and not player_dead and not campaign_complete:
+                    if not paused and not show_briefing and not player_dead and not campaign_complete:
                         world.toggle_door_in_front(player)
                 elif event.key == pygame.K_f:
                     fire_requested = True
@@ -629,21 +632,22 @@ def run_runtime(smoke_test: bool = False, data_root: Path | None = None) -> None
         if keys[pygame.K_e]:
             turn += 1.0
 
-        player.angle += 0.0 if (player_dead or campaign_complete) else turn * player.turn_speed * dt
-        if not show_briefing and not campaign_complete and not player_dead:
+        simulation_active = not paused and not show_briefing and not player_dead and not campaign_complete
+        player.angle += 0.0 if (player_dead or campaign_complete or paused) else turn * player.turn_speed * dt
+        if simulation_active:
             campaign_elapsed += dt
             level_elapsed += dt
-        world.update_doors(player, dt)
-        if not player_dead and not campaign_complete:
+        world.update_doors(player, 0.0 if paused else dt)
+        if not player_dead and not campaign_complete and not paused:
             world.move_player(player, forward, strafe, dt)
         melee_damage = 0
         spawned_projectiles: list[ProjectileState] = []
-        if not show_briefing and not player_dead and not campaign_complete:
+        if simulation_active:
             melee_damage, spawned_projectiles = update_enemies(player, enemies, enemy_types, world, dt)
         if spawned_projectiles:
             active_projectiles.extend(spawned_projectiles)
 
-        active_projectiles, projectile_damage = update_projectiles(world, player, active_projectiles, dt)
+        active_projectiles, projectile_damage = update_projectiles(world, player, active_projectiles, 0.0 if paused else dt)
         enemy_damage_scale = (1.0 + level_idx * 0.2) * difficulty.damage_mult
         scaled_damage = int(math.ceil((melee_damage + projectile_damage) * enemy_damage_scale))
         if scaled_damage > 0:
@@ -698,9 +702,9 @@ def run_runtime(smoke_test: bool = False, data_root: Path | None = None) -> None
             kills_total += 1
             level_kills += 1
 
-        if interact_requested and not show_briefing and not player_dead and not campaign_complete:
+        if interact_requested and simulation_active:
             process_objective_interaction(player, objective_state, enemies)
-        if checkpoint_requested and not show_briefing and not player_dead and not campaign_complete:
+        if checkpoint_requested and simulation_active:
             checkpoint = build_checkpoint(
                 level_idx=level_idx,
                 world=world,
@@ -736,7 +740,7 @@ def run_runtime(smoke_test: bool = False, data_root: Path | None = None) -> None
         ammo_type = active_weapon.ammo_type
         weapon_ammo = ammo_counts.get(ammo_type, 0)
         can_fire = weapon_ammo > 0
-        if fire_requested and not show_briefing and not player_dead and not campaign_complete:
+        if fire_requested and simulation_active:
             if not can_fire:
                 dry_fire_timer = 0.15
             ray_offsets: tuple[float, ...] = (0.0,)
@@ -772,13 +776,14 @@ def run_runtime(smoke_test: bool = False, data_root: Path | None = None) -> None
                     weapon_fx_timer = 0.075
                 else:
                     weapon_fx_timer = 0.065
-        shot_cooldown = max(0.0, shot_cooldown - dt)
-        weapon_fx_timer = max(0.0, weapon_fx_timer - dt)
-        damage_flash_timer = max(0.0, damage_flash_timer - dt)
-        hit_confirm_timer = max(0.0, hit_confirm_timer - dt)
-        dry_fire_timer = max(0.0, dry_fire_timer - dt)
-        heal_flash_timer = max(0.0, heal_flash_timer - dt)
-        checkpoint_notice_timer = max(0.0, checkpoint_notice_timer - dt)
+        decay_dt = 0.0 if paused else dt
+        shot_cooldown = max(0.0, shot_cooldown - decay_dt)
+        weapon_fx_timer = max(0.0, weapon_fx_timer - decay_dt)
+        damage_flash_timer = max(0.0, damage_flash_timer - decay_dt)
+        hit_confirm_timer = max(0.0, hit_confirm_timer - decay_dt)
+        dry_fire_timer = max(0.0, dry_fire_timer - decay_dt)
+        heal_flash_timer = max(0.0, heal_flash_timer - decay_dt)
+        checkpoint_notice_timer = max(0.0, checkpoint_notice_timer - decay_dt)
         level_cleared = objective_complete(objective_state, enemies)
         if level_cleared and not player_dead and next_level_requested:
             if level_idx < len(campaign) - 1:
@@ -834,6 +839,8 @@ def run_runtime(smoke_test: bool = False, data_root: Path | None = None) -> None
                 hud_lines.append("Level clear! Press ENTER for next level")
         if show_briefing:
             hud_lines.append("Mission briefing active: ENTER to deploy")
+        if paused:
+            hud_lines.append("Paused: press P to resume")
         if show_help:
             hud_lines.append("Help open: press H to close")
         if player_dead:
@@ -956,6 +963,14 @@ def run_runtime(smoke_test: bool = False, data_root: Path | None = None) -> None
             surface.blit(win_surface, (16, 86))
             surface.blit(stats_surface, (16, 102))
             surface.blit(restart_surface, (16, 118))
+        elif paused:
+            overlay = pygame.Surface((internal_w, internal_h), pygame.SRCALPHA)
+            overlay.fill((8, 10, 14, 165))
+            surface.blit(overlay, (0, 0))
+            paused_surface = font.render("PAUSED", True, (240, 220, 150))
+            resume_surface = font.render("Press P to continue", True, (230, 230, 220))
+            surface.blit(paused_surface, (16, 86))
+            surface.blit(resume_surface, (16, 102))
 
         if damage_flash_timer > 0.0:
             flash = pygame.Surface((internal_w, internal_h), pygame.SRCALPHA)

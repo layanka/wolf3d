@@ -4,7 +4,9 @@ import argparse
 import math
 import os
 from array import array
+from collections.abc import Callable
 from dataclasses import dataclass
+from pathlib import Path
 
 import pygame
 
@@ -27,10 +29,11 @@ DOOR_TILE = "2"
 DOOR_SPEED = 1.8
 DOOR_AUTO_CLOSE_DELAY = 2.0
 DOOR_HOLD_DISTANCE = 0.95
-DOOR_THICKNESS = 0.12
+DOOR_THICKNESS_CLOSED = 0.44
 DOOR_FRAME_THICKNESS = 0.07
 DOOR_SLIDE_DISTANCE = 0.38
 DOOR_OPENING_HALF_WIDTH = 0.28
+DOOR_SOLID_THRESHOLD = 0.20
 ENEMY_HIT_ANGLE = math.radians(4.0)
 ENEMY_SHOOT_RANGE = 8.0
 WEAPON_COOLDOWN = 0.24
@@ -38,6 +41,8 @@ WEAPON_RECOIL_DURATION = 0.12
 MUZZLE_FLASH_DURATION = 0.08
 SFX_SAMPLE_RATE = 22050
 TRACER_DURATION = 0.07
+STEP_INTERVAL_BASE = 0.35
+PLAYER_RADIUS = 0.14
 
 
 @dataclass
@@ -84,12 +89,22 @@ class AudioManager:
     def __init__(self) -> None:
         self.enabled = False
         self.sounds: dict[str, pygame.mixer.Sound] = {}
+        self.step_toggle = False
+        base = Path(__file__).resolve().parent / "assets" / "audio" / "sfx"
         try:
             pygame.mixer.init(frequency=SFX_SAMPLE_RATE, size=-16, channels=1)
-            self.sounds["shoot"] = synth_tone(140, 0.07, 0.30, decay=6.0)
-            self.sounds["hit"] = synth_tone(520, 0.05, 0.28, decay=10.0)
-            self.sounds["down"] = synth_tone(110, 0.16, 0.34, decay=4.5)
-            self.sounds["door"] = synth_tone(260, 0.10, 0.20, decay=3.5)
+            self.sounds["shoot"] = load_sound_or(base / "shoot.ogg", synth_shot)
+            self.sounds["hit"] = load_sound_or(base / "hit.ogg", synth_hit)
+            self.sounds["down"] = load_sound_or(base / "down.ogg", synth_down)
+            self.sounds["door"] = load_sound_or(base / "door.ogg", synth_door)
+            self.sounds["step1"] = load_sound_or(base / "step1.ogg", lambda: synth_step(0.0))
+            self.sounds["step2"] = load_sound_or(base / "step2.ogg", lambda: synth_step(0.25))
+            self.sounds["shoot"].set_volume(0.48)
+            self.sounds["hit"].set_volume(0.42)
+            self.sounds["down"].set_volume(0.42)
+            self.sounds["door"].set_volume(0.30)
+            self.sounds["step1"].set_volume(0.04)
+            self.sounds["step2"].set_volume(0.04)
             self.enabled = True
         except pygame.error:
             self.enabled = False
@@ -98,6 +113,15 @@ class AudioManager:
         if not self.enabled:
             return
         sound = self.sounds.get(name)
+        if sound is not None:
+            sound.play()
+
+    def play_step(self) -> None:
+        if not self.enabled:
+            return
+        key = "step1" if not self.step_toggle else "step2"
+        self.step_toggle = not self.step_toggle
+        sound = self.sounds.get(key)
         if sound is not None:
             sound.play()
 
@@ -114,6 +138,77 @@ def synth_tone(frequency: float, duration: float, volume: float, decay: float = 
     return pygame.mixer.Sound(buffer=data.tobytes())
 
 
+def load_sound_or(path: Path, fallback: Callable[[], pygame.mixer.Sound]) -> pygame.mixer.Sound:
+    try:
+        if path.exists():
+            return pygame.mixer.Sound(str(path))
+    except pygame.error:
+        pass
+    return fallback()
+
+
+def synth_wave(
+    duration: float, volume: float, sample_fn: Callable[[float], float], decay: float = 6.0
+) -> pygame.mixer.Sound:
+    sample_count = max(1, int(SFX_SAMPLE_RATE * duration))
+    amplitude = int(32767 * max(0.0, min(1.0, volume)))
+    data = array("h")
+    for i in range(sample_count):
+        t = i / SFX_SAMPLE_RATE
+        env = math.exp(-decay * t)
+        value = int(amplitude * env * max(-1.0, min(1.0, sample_fn(t))))
+        data.append(value)
+    return pygame.mixer.Sound(buffer=data.tobytes())
+
+
+def synth_shot() -> pygame.mixer.Sound:
+    return synth_wave(
+        0.09,
+        0.42,
+        lambda t: 0.55 * math.sin(2 * math.pi * (160 + 120 * t) * t)
+        + 0.30 * math.sin(2 * math.pi * 55 * t)
+        + 0.28 * math.sin(2 * math.pi * (370 + 40 * math.sin(30 * t)) * t),
+        decay=8.5,
+    )
+
+
+def synth_hit() -> pygame.mixer.Sound:
+    return synth_wave(
+        0.07,
+        0.32,
+        lambda t: 0.7 * math.sin(2 * math.pi * (660 - 180 * t) * t) + 0.22 * math.sin(2 * math.pi * 1200 * t),
+        decay=10.5,
+    )
+
+
+def synth_down() -> pygame.mixer.Sound:
+    return synth_wave(
+        0.20,
+        0.35,
+        lambda t: 0.65 * math.sin(2 * math.pi * (150 - 70 * t) * t) + 0.24 * math.sin(2 * math.pi * 70 * t),
+        decay=4.2,
+    )
+
+
+def synth_door() -> pygame.mixer.Sound:
+    return synth_wave(
+        0.14,
+        0.24,
+        lambda t: 0.55 * math.sin(2 * math.pi * 220 * t) + 0.30 * math.sin(2 * math.pi * 110 * t),
+        decay=3.2,
+    )
+
+
+def synth_step(phase: float) -> pygame.mixer.Sound:
+    return synth_wave(
+        0.11,
+        0.22,
+        lambda t: 0.65 * math.sin(2 * math.pi * (95 + 12 * phase) * t)
+        + 0.20 * math.sin(2 * math.pi * (180 + 20 * phase) * t),
+        decay=12.0,
+    )
+
+
 def tile_at(tx: int, ty: int) -> str:
     if tx < 0 or ty < 0:
         return WALL_TILE
@@ -128,12 +223,35 @@ def is_blocked(x: float, y: float, doors: dict[tuple[int, int], Door]) -> bool:
     if tile == WALL_TILE:
         return True
     if tile == DOOR_TILE:
-        return door_blocks_point(tx, ty, x, y, doors[(tx, ty)])
+        door = doors[(tx, ty)]
+        if door.open_amount <= DOOR_SOLID_THRESHOLD:
+            # Closed door tiles are fully non-enterable to prevent camera penetration.
+            return True
+        return door_blocks_point(tx, ty, x, y, door)
     return False
 
 
+def is_blocked_with_radius(x: float, y: float, doors: dict[tuple[int, int], Door], radius: float = PLAYER_RADIUS) -> bool:
+    offsets = (
+        (0.0, 0.0),
+        (radius, 0.0),
+        (-radius, 0.0),
+        (0.0, radius),
+        (0.0, -radius),
+        (radius * 0.7, radius * 0.7),
+        (radius * 0.7, -radius * 0.7),
+        (-radius * 0.7, radius * 0.7),
+        (-radius * 0.7, -radius * 0.7),
+    )
+    return any(is_blocked(x + ox, y + oy, doors) for ox, oy in offsets)
+
+
 def door_local_hit_kind(fx: float, fy: float, door: Door) -> int:
-    slab_half = (DOOR_THICKNESS * 0.5) * (1.0 - door.open_amount)
+    slab_half = (DOOR_THICKNESS_CLOSED * 0.5) * (1.0 - door.open_amount)
+    # When effectively closed, fill the doorway opening (but not the side jambs) so the
+    # door reads as a closed door rather than a full wall tile.
+    if door.open_amount <= DOOR_SOLID_THRESHOLD:
+        slab_half = DOOR_OPENING_HALF_WIDTH - 0.002
 
     if door.orientation == "vertical":
         if abs(fy - 0.5) > DOOR_OPENING_HALF_WIDTH:
@@ -155,6 +273,12 @@ def door_local_hit_kind(fx: float, fy: float, door: Door) -> int:
     return 0
 
 
+def closed_door_entry_hit_kind(fx: float, fy: float, door: Door) -> int:
+    if door.orientation == "vertical":
+        return 2 if abs(fy - 0.5) > DOOR_OPENING_HALF_WIDTH else 1
+    return 2 if abs(fx - 0.5) > DOOR_OPENING_HALF_WIDTH else 1
+
+
 def door_hit_kind(tx: int, ty: int, x: float, y: float, door: Door) -> int:
     return door_local_hit_kind(x - tx, y - ty, door)
 
@@ -171,16 +295,23 @@ def move_with_collision(player: Player, forward: float, strafe: float, dt: float
     sin_a = math.sin(player.angle)
     cos_a = math.cos(player.angle)
     step = player.move_speed * dt
-    dx = (cos_a * forward - sin_a * strafe) * step
-    dy = (sin_a * forward + cos_a * strafe) * step
+    dx_total = (cos_a * forward - sin_a * strafe) * step
+    dy_total = (sin_a * forward + cos_a * strafe) * step
 
-    candidate_x = player.x + dx
-    if not is_blocked(candidate_x, player.y, doors):
-        player.x = candidate_x
+    # Sub-step movement to avoid tunneling through thin door slabs.
+    max_delta = max(abs(dx_total), abs(dy_total))
+    steps = max(1, int(max_delta / 0.03) + 1)
+    dx = dx_total / steps
+    dy = dy_total / steps
 
-    candidate_y = player.y + dy
-    if not is_blocked(player.x, candidate_y, doors):
-        player.y = candidate_y
+    for _ in range(steps):
+        candidate_x = player.x + dx
+        if not is_blocked_with_radius(candidate_x, player.y, doors):
+            player.x = candidate_x
+
+        candidate_y = player.y + dy
+        if not is_blocked_with_radius(player.x, candidate_y, doors):
+            player.y = candidate_y
 
 
 def trace_door_segment(
@@ -194,11 +325,14 @@ def trace_door_segment(
     start_depth: float,
     end_depth: float,
 ) -> tuple[float, int, int] | None:
-    # Sample only inside the crossed tile segment for door geometry checks.
-    step = 0.01
-    depth = max(0.0, start_depth) + 0.001
-    end = max(depth, end_depth)
-    while depth <= end:
+    # Conservative sampling inside the crossed tile segment to avoid ray leaks
+    # through thin door features at grazing angles.
+    start = max(0.0, start_depth) + 0.0005
+    end = max(start, end_depth)
+    max_step = 0.002
+    steps = max(1, int((end - start) / max_step) + 1)
+    for i in range(steps + 1):
+        depth = start + (end - start) * (i / steps)
         x = px + ray_dir_x * depth
         y = py + ray_dir_y * depth
         hit_kind = door_hit_kind(tx, ty, x, y, door)
@@ -206,7 +340,6 @@ def trace_door_segment(
             return depth, 155, 2
         if hit_kind == 1:
             return depth, 235, 1
-        depth += step
     return None
 
 
@@ -216,6 +349,11 @@ def cast_ray(px: float, py: float, ray_angle: float, doors: dict[tuple[int, int]
 
     map_x = int(px)
     map_y = int(py)
+    if tile_at(map_x, map_y) == DOOR_TILE:
+        door_here = doors[(map_x, map_y)]
+        if door_here.open_amount <= DOOR_SOLID_THRESHOLD:
+            return RayHit(0.001, 210, 1)
+
     delta_dist_x = abs(1.0 / ray_dir_x) if abs(ray_dir_x) > 1e-8 else float("inf")
     delta_dist_y = abs(1.0 / ray_dir_y) if abs(ray_dir_y) > 1e-8 else float("inf")
 
@@ -254,8 +392,15 @@ def cast_ray(px: float, py: float, ray_angle: float, doors: dict[tuple[int, int]
             shade = 180 if int(hit_x * 2) % 2 == 0 else 220
             return RayHit(depth, shade, 0)
         if tile == DOOR_TILE:
+            door = doors[(map_x, map_y)]
+            if door.open_amount <= DOOR_SOLID_THRESHOLD:
+                hit_x = px + ray_dir_x * depth
+                hit_y = py + ray_dir_y * depth
+                hit_kind = closed_door_entry_hit_kind(hit_x - map_x, hit_y - map_y, door)
+                shade = 155 if hit_kind == 2 else 210
+                return RayHit(depth, shade, hit_kind)
             door_hit = trace_door_segment(
-                px, py, ray_dir_x, ray_dir_y, map_x, map_y, doors[(map_x, map_y)], depth, min(next_boundary, max_depth)
+                px, py, ray_dir_x, ray_dir_y, map_x, map_y, door, depth, min(next_boundary, max_depth)
             )
             if door_hit is not None:
                 door_depth, door_shade, door_kind = door_hit
@@ -335,8 +480,9 @@ def update_doors(doors: dict[tuple[int, int], Door], player: Player, dt: float) 
                     if door.auto_close_timer <= 0.0:
                         door.target_open = False
         else:
-            if player_in_door_tile(player, door_pos) or player_near_door(player, door_pos):
-                # Mirror classic behavior: a door won't close on top of or near the player.
+            # Closed doors should not auto-open by proximity; only keep opening if already partially open.
+            if door.open_amount > 0.0 and player_in_door_tile(player, door_pos):
+                # Mirror classic behavior: a door won't close on top of the player.
                 door.target_open = True
                 door.auto_close_timer = DOOR_AUTO_CLOSE_DELAY
                 continue
@@ -534,6 +680,7 @@ def run(smoke_test: bool = False) -> None:
     muzzle_flash_timer = 0.0
     shot_trace = ShotTrace()
     depth_buffer = [20.0] * internal_w
+    step_timer = 0.0
 
     running = True
     frames = 0
@@ -595,6 +742,11 @@ def run(smoke_test: bool = False) -> None:
         muzzle_flash_timer = max(0.0, muzzle_flash_timer - dt)
         shot_trace.timer = max(0.0, shot_trace.timer - dt)
         door_in_front = find_door_in_front(player, doors)
+        moving = abs(forward) + abs(strafe) > 0.01
+        step_timer = max(0.0, step_timer - dt)
+        if moving and step_timer <= 0.0:
+            audio.play_step()
+            step_timer = STEP_INTERVAL_BASE
 
         surface.fill((35, 35, 40))
         pygame.draw.rect(surface, (70, 78, 102), (0, internal_h // 2, internal_w, internal_h // 2))

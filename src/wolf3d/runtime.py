@@ -231,6 +231,20 @@ def format_duration(seconds: float) -> str:
     return f"{minutes:02d}:{secs:02d}"
 
 
+def default_ammo_counts() -> dict[str, int]:
+    return {"light": 60, "shell": 12, "rifle": 0}
+
+
+def pickup_ammo_bonus(weapon_id: str) -> dict[str, int]:
+    if weapon_id == "smg":
+        return {"light": 30}
+    if weapon_id == "shotgun":
+        return {"shell": 10}
+    if weapon_id == "autorifle":
+        return {"rifle": 48}
+    return {"light": 12}
+
+
 def run_runtime(smoke_test: bool = False, data_root: Path | None = None) -> None:
     if smoke_test:
         os.environ["SDL_VIDEODRIVER"] = "dummy"
@@ -274,6 +288,8 @@ def run_runtime(smoke_test: bool = False, data_root: Path | None = None) -> None
     shots_hit = 0
     kills_total = 0
     level_kills = 0
+    ammo_counts = default_ammo_counts()
+    dry_fire_timer = 0.0
 
     level_idx = 0
     objective_state = build_objective_state(campaign[level_idx].id)
@@ -354,6 +370,7 @@ def run_runtime(smoke_test: bool = False, data_root: Path | None = None) -> None
                     level_elapsed = 0.0
                     level_kills = 0
                     prev_alive_count = sum(1 for enemy in enemies if enemy.alive)
+                    dry_fire_timer = 0.0
                 elif event.key == pygame.K_n and campaign_complete:
                     level_idx = 0
                     world, player, enemies, pickups, level_title = load_level_state(level_idx)
@@ -372,6 +389,8 @@ def run_runtime(smoke_test: bool = False, data_root: Path | None = None) -> None
                     kills_total = 0
                     level_kills = 0
                     prev_alive_count = sum(1 for enemy in enemies if enemy.alive)
+                    ammo_counts = default_ammo_counts()
+                    dry_fire_timer = 0.0
             elif event.type == pygame.MOUSEBUTTONDOWN and event.button == 1:
                 fire_requested = True
 
@@ -414,6 +433,8 @@ def run_runtime(smoke_test: bool = False, data_root: Path | None = None) -> None
             if dx * dx + dy * dy <= 0.35 * 0.35:
                 pickup_type = str(pickup["type"])
                 unlocked_weapons.add(pickup_type)
+                for ammo_type, amount in pickup_ammo_bonus(pickup_type).items():
+                    ammo_counts[ammo_type] = ammo_counts.get(ammo_type, 0) + amount
                 if objective_state.keycard_weapon_id == pickup_type:
                     objective_state.keycard_collected = True
                 pickups.remove(pickup)
@@ -425,42 +446,50 @@ def run_runtime(smoke_test: bool = False, data_root: Path | None = None) -> None
             current_weapon_idx -= 1
 
         active_weapon = weapons_by_id[weapon_cycle[current_weapon_idx]]
+        ammo_type = active_weapon.ammo_type
+        weapon_ammo = ammo_counts.get(ammo_type, 0)
+        can_fire = weapon_ammo > 0
         if fire_requested and not show_briefing and not player_dead and not campaign_complete:
+            if not can_fire:
+                dry_fire_timer = 0.15
             ray_offsets: tuple[float, ...] = (0.0,)
             per_pellet_damage = active_weapon.damage
             if active_weapon.id == "shotgun":
                 ray_offsets = (-0.08, -0.04, 0.0, 0.04, 0.08)
                 per_pellet_damage = max(1, active_weapon.damage // 3)
-            fire, _target = attempt_fire_multi(
-                shot_cooldown,
-                player,
-                world,
-                enemies,
-                damage=per_pellet_damage,
-                max_range=active_weapon.range,
-                cooldown=active_weapon.cooldown,
-                ray_offsets=ray_offsets,
-            )
-            shot_cooldown = fire.next_cooldown
-            _ = route_simulation_audio_events(False, fire)
-            if fire.fired:
-                shots_fired += 1
-            if fire.hit_enemy:
-                shots_hit += 1
-                hit_confirm_timer = 0.08
-            weapon_fx_id = active_weapon.id
-            if active_weapon.id == "smg":
-                weapon_fx_timer = 0.045
-            elif active_weapon.id == "shotgun":
-                weapon_fx_timer = 0.11
-            elif active_weapon.id == "autorifle":
-                weapon_fx_timer = 0.075
-            else:
-                weapon_fx_timer = 0.065
+            if can_fire:
+                fire, _target = attempt_fire_multi(
+                    shot_cooldown,
+                    player,
+                    world,
+                    enemies,
+                    damage=per_pellet_damage,
+                    max_range=active_weapon.range,
+                    cooldown=active_weapon.cooldown,
+                    ray_offsets=ray_offsets,
+                )
+                shot_cooldown = fire.next_cooldown
+                _ = route_simulation_audio_events(False, fire)
+                if fire.fired:
+                    ammo_counts[ammo_type] = max(0, weapon_ammo - 1)
+                    shots_fired += 1
+                if fire.hit_enemy:
+                    shots_hit += 1
+                    hit_confirm_timer = 0.08
+                weapon_fx_id = active_weapon.id
+                if active_weapon.id == "smg":
+                    weapon_fx_timer = 0.045
+                elif active_weapon.id == "shotgun":
+                    weapon_fx_timer = 0.11
+                elif active_weapon.id == "autorifle":
+                    weapon_fx_timer = 0.075
+                else:
+                    weapon_fx_timer = 0.065
         shot_cooldown = max(0.0, shot_cooldown - dt)
         weapon_fx_timer = max(0.0, weapon_fx_timer - dt)
         damage_flash_timer = max(0.0, damage_flash_timer - dt)
         hit_confirm_timer = max(0.0, hit_confirm_timer - dt)
+        dry_fire_timer = max(0.0, dry_fire_timer - dt)
         alive_count = sum(1 for enemy in enemies if enemy.alive)
         if alive_count < prev_alive_count:
             killed = prev_alive_count - alive_count
@@ -478,6 +507,9 @@ def run_runtime(smoke_test: bool = False, data_root: Path | None = None) -> None
                 show_briefing = True
                 active_projectiles.clear()
                 objective_state = build_objective_state(campaign[level_idx].id)
+                ammo_counts["light"] = ammo_counts.get("light", 0) + 12
+                ammo_counts["shell"] = ammo_counts.get("shell", 0) + 4
+                ammo_counts["rifle"] = ammo_counts.get("rifle", 0) + 10
                 level_elapsed = 0.0
                 level_kills = 0
                 prev_alive_count = sum(1 for enemy in enemies if enemy.alive)
@@ -529,6 +561,11 @@ def run_runtime(smoke_test: bool = False, data_root: Path | None = None) -> None
         if shots_fired > 0:
             accuracy = int((shots_hit / shots_fired) * 100)
             hud_lines.append(f"Accuracy: {accuracy}%")
+        hud_lines.append(f"Ammo ({ammo_type}): {ammo_counts.get(ammo_type, 0)}")
+        if ammo_counts.get(ammo_type, 0) <= 3:
+            hud_lines.append("Low ammo")
+        if dry_fire_timer > 0.0:
+            hud_lines.append("Out of ammo")
         hud_lines.append(f"Time L/C: {format_duration(level_elapsed)} / {format_duration(campaign_elapsed)}")
         hud_lines.append(f"Kills L/C: {level_kills} / {kills_total}")
         objective_hint_node = nearest_objective_node(player, objective_state)

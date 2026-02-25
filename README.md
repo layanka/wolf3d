@@ -21,6 +21,12 @@ UV_CACHE_DIR=.uv-cache uv sync
 UV_CACHE_DIR=.uv-cache uv run python poc_game.py
 ```
 
+### Run Extracted Runtime (Real Game Shell)
+
+```bash
+UV_CACHE_DIR=.uv-cache uv run python -m src.wolf3d.runtime_entry
+```
+
 ### Controls
 
 - `W/S` or `Up/Down`: move forward/backward
@@ -59,4 +65,5 @@ Audio source and license notes:
 
 ```bash
 UV_CACHE_DIR=.uv-cache uv run python poc_game.py --smoke-test
+UV_CACHE_DIR=.uv-cache uv run python -m src.wolf3d.runtime_entry --smoke-test
 ```

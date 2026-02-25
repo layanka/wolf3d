@@ -11,7 +11,7 @@ This file is the source of truth for project direction and resume state.
 - Date: 2026-02-24
 - Branch: `main`
 - Last committed hash: `086ee85`
-- Local uncommitted changes currently present: `main.py`, `README.md`
+- Local uncommitted changes currently present: `poc_game.py`, `README.md`
 - Remote: `origin` -> `https://github.com/layanka/wolf3d.git`
 
 Recent committed checkpoints:
@@ -172,7 +172,7 @@ These interfaces should remain stable while modules evolve:
 Required before advancing:
 
 1. Runtime
-- `UV_CACHE_DIR=.uv-cache uv run python main.py --smoke-test`
+- `UV_CACHE_DIR=.uv-cache uv run python poc_game.py --smoke-test`
 
 2. Playability
 - manual test by Philippe with explicit feedback

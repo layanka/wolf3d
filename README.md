@@ -18,7 +18,7 @@ UV_CACHE_DIR=.uv-cache uv sync
 ### Run
 
 ```bash
-UV_CACHE_DIR=.uv-cache uv run python main.py
+UV_CACHE_DIR=.uv-cache uv run python poc_game.py
 ```
 
 ### Controls
@@ -58,5 +58,5 @@ Audio source and license notes:
 ### Smoke test
 
 ```bash
-UV_CACHE_DIR=.uv-cache uv run python main.py --smoke-test
+UV_CACHE_DIR=.uv-cache uv run python poc_game.py --smoke-test
 ```

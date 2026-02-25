@@ -28,6 +28,13 @@ UV_CACHE_DIR=.uv-cache uv run python -m src.wolf3d.runtime_entry
 UV_CACHE_DIR=.uv-cache uv run python -m src.wolf3d.runtime_entry --quickload
 ```
 
+Startup shell:
+- `N` or `Enter`: start new campaign
+- `C`: continue from disk quick-save (if available)
+- `1/2/3`: pick starting difficulty for a new run
+- `H`: toggle controls help on title screen
+- `Esc`: quit from title screen
+
 Runtime shell data sources:
 - `game_data/campaign.json`
 - `game_data/levels/*.json`
@@ -126,6 +133,7 @@ Expected visuals:
 - Levels now support scripted trigger encounters (announcement + reinforcement spawns)
 - Campaign briefings now follow a single narrative arc with clearer objective wording
 - Level pacing pass now differentiates encounter density and route shape across all 3 maps
+- Runtime starts with an in-game title/options shell (new run or continue quick-save)
 
 Audio source and license notes:
 - [assets/audio/CREDITS.md](/Users/philippe.lefebvre2/Code/testing1/assets/audio/CREDITS.md)

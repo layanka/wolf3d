@@ -81,9 +81,9 @@ Living feature backlog for the full game (post-PoC), with sprint IDs, status, or
   - Accept: each level has distinct route/encounter identity.
 
 ### Planned: Menus and Frontend Shell
-- `FS-023` `next`: Title/options shell (new run, continue, settings, controls).
+- `FS-023` `done`: Title/options shell (new run, continue, settings, controls).
   - Accept: no code-side flag requirement for common startup flows.
-- `FS-024` `planned`: Pause/restart UX pass (clear state transitions, confirmations where needed).
+- `FS-024` `next`: Pause/restart UX pass (clear state transitions, confirmations where needed).
   - Accept: no ambiguous key overlap and no accidental run loss.
 
 ### Planned: Stabilization and Release Readiness

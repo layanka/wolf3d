@@ -418,6 +418,71 @@ def draw_help_overlay(surface: pygame.Surface, font: pygame.font.Font) -> None:
         surface.blit(text_surface, (18, 22 + idx * 12))
 
 
+def run_startup_menu(
+    screen: pygame.Surface,
+    surface: pygame.Surface,
+    font: pygame.font.Font,
+    clock: pygame.time.Clock,
+    has_quicksave: bool,
+    initial_difficulty_id: str,
+) -> tuple[str, str]:
+    difficulty_ids = ("easy", "normal", "hard")
+    selected_difficulty = initial_difficulty_id if initial_difficulty_id in difficulty_ids else "normal"
+    show_controls = False
+    title_font = pygame.font.Font(None, 34)
+
+    while True:
+        dt = min(clock.tick(60) / 1000.0, 0.05)
+        _ = dt
+        for event in pygame.event.get():
+            if event.type == pygame.QUIT:
+                return "quit", selected_difficulty
+            if event.type != pygame.KEYDOWN:
+                continue
+            if event.key in (pygame.K_ESCAPE, pygame.K_q):
+                return "quit", selected_difficulty
+            if event.key in (pygame.K_RETURN, pygame.K_n):
+                return "new", selected_difficulty
+            if event.key == pygame.K_c and has_quicksave:
+                return "continue", selected_difficulty
+            if event.key == pygame.K_h:
+                show_controls = not show_controls
+            if event.key == pygame.K_1:
+                selected_difficulty = "easy"
+            elif event.key == pygame.K_2:
+                selected_difficulty = "normal"
+            elif event.key == pygame.K_3:
+                selected_difficulty = "hard"
+
+        surface.fill((12, 12, 20))
+        pygame.draw.rect(surface, (20, 24, 34), (0, 0, surface.get_width(), surface.get_height() // 2))
+        pygame.draw.rect(
+            surface,
+            (26, 32, 42),
+            (0, surface.get_height() // 2, surface.get_width(), surface.get_height() // 2),
+        )
+        title = title_font.render("Operation Iron Corridor", True, (240, 220, 150))
+        surface.blit(title, (surface.get_width() // 2 - title.get_width() // 2, 22))
+
+        menu_lines = [
+            "N / Enter: New Campaign",
+            f"C: Continue Quick-save ({'available' if has_quicksave else 'not found'})",
+            f"Difficulty 1/2/3: {selected_difficulty}",
+            "H: Toggle Controls Help",
+            "Esc: Quit",
+        ]
+        for idx, line in enumerate(menu_lines):
+            color = (228, 228, 235) if idx != 1 or has_quicksave else (145, 145, 155)
+            text = font.render(line, True, color)
+            surface.blit(text, (28, 72 + idx * 16))
+
+        if show_controls:
+            draw_help_overlay(surface, font)
+
+        upscaled = pygame.transform.scale(surface, screen.get_size())
+        screen.blit(upscaled, (0, 0))
+        pygame.display.flip()
+
 def enemy_in_sights(
     player: PlayerState,
     enemies: list[EnemyState],
@@ -806,6 +871,20 @@ def run_runtime(smoke_test: bool = False, data_root: Path | None = None, quicklo
     pygame.display.set_caption("Wolf3D Real Runtime (Campaign Shell)")
 
     settings = load_runtime_settings(project_root)
+    startup_difficulty_id = str(settings.get("difficulty_id", "normal"))
+    startup_mode = "continue" if quickload else "new"
+    if not smoke_test and not quickload:
+        startup_mode, startup_difficulty_id = run_startup_menu(
+            screen,
+            surface,
+            font,
+            clock,
+            has_quicksave=quicksave_path(project_root).exists(),
+            initial_difficulty_id=startup_difficulty_id,
+        )
+        if startup_mode == "quit":
+            pygame.quit()
+            return
 
     fov = math.radians(BASE_FOV_DEG)
     show_minimap = bool(settings.get("show_minimap", True))
@@ -838,8 +917,7 @@ def run_runtime(smoke_test: bool = False, data_root: Path | None = None, quicklo
     shots_hit = 0
     kills_total = 0
     level_kills = 0
-    loaded_difficulty_id = str(settings.get("difficulty_id", "normal"))
-    difficulty = DIFFICULTY_PROFILES.get(loaded_difficulty_id, DIFFICULTY_PROFILES["normal"])
+    difficulty = DIFFICULTY_PROFILES.get(startup_difficulty_id, DIFFICULTY_PROFILES["normal"])
     ammo_counts = default_ammo_counts(difficulty.ammo_gain_mult)
     magazine_counts = build_initial_magazines(weapon_cycle, weapons_by_id, ammo_counts)
     reload_timer = 0.0
@@ -1081,7 +1159,7 @@ def run_runtime(smoke_test: bool = False, data_root: Path | None = None, quicklo
         settings_notice_text = ""
         return True
 
-    if quickload:
+    if startup_mode == "continue":
         loaded_checkpoint = load_checkpoint_from_disk(project_root)
         if loaded_checkpoint is not None:
             checkpoint = loaded_checkpoint

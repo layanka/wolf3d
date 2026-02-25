@@ -39,6 +39,7 @@ Runtime shell data sources:
 - `Left/Right` or `Q/E`: rotate
 - `Space`: open/close door in front of you
 - `F` or left mouse click: shoot
+- `X`: interact with mission objectives (extraction, consoles, beacon)
 - `1/2/3/4`: switch weapon archetype (`pistol` / `smg` / `shotgun` / `autorifle`)
 - `M`: toggle minimap
 - `Enter`: dismiss level briefing / advance to next level after level clear (runtime shell)
@@ -70,6 +71,7 @@ Expected visuals:
 - Ranged enemies now fire visible projectiles that are blocked by walls/doors
 - Player muzzle flash is now weapon-specific (pistol/smg/shotgun/autorifle)
 - Incoming enemy rounds are shown as orange dots on the minimap
+- Objective nodes are shown as cyan minimap markers
 - Shotgun now uses a 5-pellet spread pattern
 - Combat feedback includes a brief red damage flash and hit-confirm text
 

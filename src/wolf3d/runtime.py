@@ -2,7 +2,9 @@ from __future__ import annotations
 
 import math
 import os
+from dataclasses import dataclass, field
 from pathlib import Path
+from typing import Literal
 
 import pygame
 
@@ -22,6 +24,113 @@ from src.wolf3d.gameplay.projectiles import update_projectiles
 from src.wolf3d.render.frame import build_frame_snapshot
 from src.wolf3d.ui.hud import format_hud_lines
 from src.wolf3d.world.simulation import WorldSimulation
+
+INTERACT_RANGE = 0.7
+
+
+@dataclass
+class ObjectiveNode:
+    kind: Literal["extract", "console", "beacon"]
+    x: float
+    y: float
+    activated: bool = False
+
+
+@dataclass
+class ObjectiveState:
+    mode: Literal["key_extract", "consoles", "commander_beacon"]
+    keycard_weapon_id: str | None = None
+    keycard_collected: bool = False
+    nodes: list[ObjectiveNode] = field(default_factory=list)
+
+
+def build_objective_state(level_id: str) -> ObjectiveState:
+    if level_id == "level_01":
+        return ObjectiveState(
+            mode="key_extract",
+            keycard_weapon_id="smg",
+            nodes=[ObjectiveNode(kind="extract", x=13.5, y=9.5)],
+        )
+    if level_id == "level_02":
+        return ObjectiveState(
+            mode="consoles",
+            nodes=[
+                ObjectiveNode(kind="console", x=3.5, y=1.5),
+                ObjectiveNode(kind="console", x=7.5, y=5.5),
+                ObjectiveNode(kind="console", x=12.5, y=9.5),
+            ],
+        )
+    return ObjectiveState(
+        mode="commander_beacon",
+        nodes=[ObjectiveNode(kind="beacon", x=2.5, y=9.5)],
+    )
+
+
+def objective_complete(state: ObjectiveState, enemies: list[EnemyState]) -> bool:
+    if state.mode == "key_extract":
+        extract_node = state.nodes[0]
+        return state.keycard_collected and extract_node.activated
+    if state.mode == "consoles":
+        return all(node.activated for node in state.nodes)
+    commander_alive = any(e.alive and e.type_id == "commander" for e in enemies)
+    beacon_node = state.nodes[0]
+    return (not commander_alive) and beacon_node.activated
+
+
+def objective_status_line(state: ObjectiveState, enemies: list[EnemyState]) -> str:
+    if state.mode == "key_extract":
+        card = "yes" if state.keycard_collected else "no"
+        extract = "ready" if state.nodes[0].activated else "pending"
+        return f"Objective: keycard={card} extraction={extract}"
+    if state.mode == "consoles":
+        done = sum(1 for node in state.nodes if node.activated)
+        return f"Objective: consoles {done}/{len(state.nodes)}"
+    commander_alive = any(e.alive and e.type_id == "commander" for e in enemies)
+    commander = "alive" if commander_alive else "down"
+    beacon = "online" if state.nodes[0].activated else "offline"
+    return f"Objective: commander={commander} beacon={beacon}"
+
+
+def nearest_objective_node(player: PlayerState, state: ObjectiveState) -> ObjectiveNode | None:
+    nearest: ObjectiveNode | None = None
+    nearest_dist = float("inf")
+    for node in state.nodes:
+        if node.activated:
+            continue
+        dist = math.hypot(node.x - player.x, node.y - player.y)
+        if dist <= INTERACT_RANGE and dist < nearest_dist:
+            nearest = node
+            nearest_dist = dist
+    return nearest
+
+
+def objective_interact_hint(node: ObjectiveNode, state: ObjectiveState, enemies: list[EnemyState]) -> str:
+    if node.kind == "extract":
+        if not state.keycard_collected:
+            return "Find keycard before extraction"
+        return "Press X to extract"
+    if node.kind == "console":
+        return "Press X to disable console"
+    commander_alive = any(e.alive and e.type_id == "commander" for e in enemies)
+    if commander_alive:
+        return "Commander must be eliminated first"
+    return "Press X to activate beacon"
+
+
+def process_objective_interaction(player: PlayerState, state: ObjectiveState, enemies: list[EnemyState]) -> None:
+    node = nearest_objective_node(player, state)
+    if node is None:
+        return
+    if node.kind == "extract":
+        if state.keycard_collected:
+            node.activated = True
+        return
+    if node.kind == "console":
+        node.activated = True
+        return
+    commander_alive = any(e.alive and e.type_id == "commander" for e in enemies)
+    if not commander_alive:
+        node.activated = True
 
 
 def render_enemies(
@@ -155,6 +264,7 @@ def run_runtime(smoke_test: bool = False, data_root: Path | None = None) -> None
     hit_confirm_timer = 0.0
 
     level_idx = 0
+    objective_state = build_objective_state(campaign[level_idx].id)
 
     def load_level_state(index: int) -> tuple[WorldSimulation, PlayerState, list[EnemyState], list[dict[str, float | str]], str]:
         campaign_level = campaign[index]
@@ -189,6 +299,7 @@ def run_runtime(smoke_test: bool = False, data_root: Path | None = None) -> None
         frames += 1
         fire_requested = False
         next_level_requested = False
+        interact_requested = False
 
         for event in pygame.event.get():
             if event.type == pygame.QUIT:
@@ -203,6 +314,8 @@ def run_runtime(smoke_test: bool = False, data_root: Path | None = None) -> None
                         world.toggle_door_in_front(player)
                 elif event.key == pygame.K_f:
                     fire_requested = True
+                elif event.key == pygame.K_x:
+                    interact_requested = True
                 elif event.key == pygame.K_RETURN:
                     if show_briefing:
                         show_briefing = False
@@ -224,6 +337,7 @@ def run_runtime(smoke_test: bool = False, data_root: Path | None = None) -> None
                     player_dead = False
                     campaign_complete = False
                     active_projectiles.clear()
+                    objective_state = build_objective_state(campaign[level_idx].id)
                 elif event.key == pygame.K_n and campaign_complete:
                     level_idx = 0
                     world, player, enemies, pickups, level_title = load_level_state(level_idx)
@@ -234,6 +348,7 @@ def run_runtime(smoke_test: bool = False, data_root: Path | None = None) -> None
                     player_dead = False
                     campaign_complete = False
                     active_projectiles.clear()
+                    objective_state = build_objective_state(campaign[level_idx].id)
             elif event.type == pygame.MOUSEBUTTONDOWN and event.button == 1:
                 fire_requested = True
 
@@ -271,8 +386,14 @@ def run_runtime(smoke_test: bool = False, data_root: Path | None = None) -> None
             dx = float(pickup["x"]) - player.x
             dy = float(pickup["y"]) - player.y
             if dx * dx + dy * dy <= 0.35 * 0.35:
-                unlocked_weapons.add(str(pickup["type"]))
+                pickup_type = str(pickup["type"])
+                unlocked_weapons.add(pickup_type)
+                if objective_state.keycard_weapon_id == pickup_type:
+                    objective_state.keycard_collected = True
                 pickups.remove(pickup)
+
+        if interact_requested and not show_briefing and not player_dead and not campaign_complete:
+            process_objective_interaction(player, objective_state, enemies)
 
         while weapon_cycle[current_weapon_idx] not in unlocked_weapons and current_weapon_idx > 0:
             current_weapon_idx -= 1
@@ -312,7 +433,7 @@ def run_runtime(smoke_test: bool = False, data_root: Path | None = None) -> None
         damage_flash_timer = max(0.0, damage_flash_timer - dt)
         hit_confirm_timer = max(0.0, hit_confirm_timer - dt)
 
-        level_cleared = all(not e.alive for e in enemies)
+        level_cleared = objective_complete(objective_state, enemies)
         if level_cleared and not player_dead and next_level_requested:
             if level_idx < len(campaign) - 1:
                 level_idx += 1
@@ -321,6 +442,7 @@ def run_runtime(smoke_test: bool = False, data_root: Path | None = None) -> None
                 current_weapon_idx = 0
                 show_briefing = True
                 active_projectiles.clear()
+                objective_state = build_objective_state(campaign[level_idx].id)
             else:
                 campaign_complete = True
 
@@ -359,12 +481,16 @@ def run_runtime(smoke_test: bool = False, data_root: Path | None = None) -> None
             hud_lines.append("Mission briefing active: ENTER to deploy")
         if player_dead:
             hud_lines.append("You were eliminated: press R to retry level")
+        hud_lines.append(objective_status_line(objective_state, enemies))
         if active_projectiles:
             hud_lines.append(f"Incoming: {len(active_projectiles)}")
         if level_idx > 0:
             hud_lines.append(f"Threat scale: x{1.0 + level_idx * 0.2:.1f}")
         if hit_confirm_timer > 0.0:
             hud_lines.append("Hit confirmed")
+        objective_hint_node = nearest_objective_node(player, objective_state)
+        if objective_hint_node is not None:
+            hud_lines.append(objective_interact_hint(objective_hint_node, objective_state, enemies))
         for i, line in enumerate(hud_lines):
             color = (245, 210, 120) if "Level clear" in line else (220, 220, 225)
             hud_surface = font.render(line, True, color)
@@ -402,6 +528,11 @@ def run_runtime(smoke_test: bool = False, data_root: Path | None = None) -> None
                 sy = int(pad + projectile.y * scale)
                 if 0 <= sx < internal_w and 0 <= sy < internal_h:
                     pygame.draw.circle(surface, (250, 120, 70), (sx, sy), 1)
+            for node in objective_state.nodes:
+                ox = int(pad + node.x * scale)
+                oy = int(pad + node.y * scale)
+                color = (80, 225, 245) if not node.activated else (70, 130, 140)
+                pygame.draw.circle(surface, color, (ox, oy), 2)
 
         if show_briefing:
             overlay = pygame.Surface((internal_w, internal_h), pygame.SRCALPHA)

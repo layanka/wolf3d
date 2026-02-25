@@ -114,6 +114,7 @@ Expected visuals:
 - HUD now shows contextual prompts when a door is in front (`SPACE`)
 - HUD now provides objective direction and distance guidance
 - HUD now includes a top-screen objective compass arrow
+- Enemy hit reactions now include short stagger/suppression windows by archetype
 - Crosshair now turns red when an enemy is in direct line of fire
 - HUD/briefing now display each level's campaign goal text (`win_condition`)
 

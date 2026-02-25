@@ -57,9 +57,9 @@ Living feature backlog for the full game (post-PoC), with sprint IDs, status, or
   - Accept: `9/0`, `F10` work and survive restart.
 
 ### Planned: Combat and AI Expansion
-- `FS-014` `next`: Enemy reaction model (stagger, flinch windows, short suppression behavior).
+- `FS-014` `done`: Enemy reaction model (stagger, flinch windows, short suppression behavior).
   - Accept: hit enemies react differently by archetype; behavior is readable and fair.
-- `FS-015` `planned`: Enemy archetype depth pass (distinct attack timings, preferred ranges, path pressure).
+- `FS-015` `next`: Enemy archetype depth pass (distinct attack timings, preferred ranges, path pressure).
   - Accept: guard/assault/hound/commander feel tactically distinct.
 - `FS-016` `planned`: Projectile/combat polish (impact VFX differentiation, near-miss cue, damage direction hint).
   - Accept: player can infer incoming threat direction and impact type.

@@ -27,8 +27,11 @@ def update_enemies(
             continue
 
         enemy.attack_cooldown = max(0.0, enemy.attack_cooldown - dt)
+        enemy.stagger_timer = max(0.0, enemy.stagger_timer - dt)
+        enemy.suppression_timer = max(0.0, enemy.suppression_timer - dt)
         enemy.behavior_phase += dt
         spec = enemy_defs[enemy.type_id]
+        _apply_hit_reaction(enemy, spec)
 
         dx = player.x - enemy.x
         dy = player.y - enemy.y
@@ -40,10 +43,14 @@ def update_enemies(
         toward_y = dy / distance
         has_los = _has_line_of_sight(world, enemy.x, enemy.y, player.x, player.y, distance)
 
+        if enemy.stagger_timer > 0.0:
+            continue
+
         behavior = spec.behavior
+        movement_mult = 0.75 if enemy.suppression_timer > 0.0 else 1.0
         if behavior == "rush_melee":
             if has_los and distance > spec.attack_range * 0.75:
-                _move_enemy(world, player, enemy, toward_x, toward_y, spec.move_speed * 1.15, dt)
+                _move_enemy(world, player, enemy, toward_x, toward_y, spec.move_speed * 1.15 * movement_mult, dt)
         elif behavior == "aggressive_flank":
             if has_los:
                 strafe_sign = 1.0 if math.sin(enemy.behavior_phase * 1.4) >= 0.0 else -1.0
@@ -52,19 +59,32 @@ def update_enemies(
                 push = 1.0 if distance > spec.attack_range * 0.85 else 0.2
                 move_x = toward_x * push + flank_x * 0.85
                 move_y = toward_y * push + flank_y * 0.85
-                _move_enemy(world, player, enemy, move_x, move_y, spec.move_speed, dt)
+                _move_enemy(world, player, enemy, move_x, move_y, spec.move_speed * movement_mult, dt)
         elif behavior == "boss_phase":
             if has_los:
                 if distance > spec.attack_range * 0.8:
-                    _move_enemy(world, player, enemy, toward_x, toward_y, spec.move_speed * 0.9, dt)
+                    _move_enemy(world, player, enemy, toward_x, toward_y, spec.move_speed * 0.9 * movement_mult, dt)
                 elif distance < 3.0:
-                    _move_enemy(world, player, enemy, -toward_x, -toward_y, spec.move_speed * 0.75, dt)
+                    _move_enemy(world, player, enemy, -toward_x, -toward_y, spec.move_speed * 0.75 * movement_mult, dt)
                 else:
                     strafe = 1.0 if math.sin(enemy.behavior_phase) >= 0.0 else -1.0
-                    _move_enemy(world, player, enemy, -toward_y * strafe, toward_x * strafe, spec.move_speed * 0.6, dt)
+                    _move_enemy(
+                        world,
+                        player,
+                        enemy,
+                        -toward_y * strafe,
+                        toward_x * strafe,
+                        spec.move_speed * 0.6 * movement_mult,
+                        dt,
+                    )
         else:  # patrol_chase_shoot and unknown defaults
             if has_los and distance > spec.attack_range * 0.9:
-                _move_enemy(world, player, enemy, toward_x, toward_y, spec.move_speed, dt)
+                _move_enemy(world, player, enemy, toward_x, toward_y, spec.move_speed * movement_mult, dt)
+
+        if enemy.suppression_timer > 0.0 and behavior != "rush_melee":
+            if has_los and distance < spec.attack_range * 0.95:
+                _move_enemy(world, player, enemy, -toward_x, -toward_y, spec.move_speed * 0.45, dt)
+            continue
 
         if not has_los or distance > spec.attack_range or enemy.attack_cooldown > 0.0:
             continue
@@ -90,6 +110,33 @@ def update_enemies(
         enemy.attack_cooldown = _attack_cadence(spec)
 
     return melee_damage, spawned_projectiles
+
+
+def _apply_hit_reaction(enemy: EnemyState, spec: EnemyType) -> None:
+    if enemy.last_health_snapshot < 0:
+        enemy.last_health_snapshot = enemy.health
+        return
+    if enemy.health >= enemy.last_health_snapshot:
+        enemy.last_health_snapshot = enemy.health
+        return
+
+    if spec.behavior == "rush_melee":
+        enemy.stagger_timer = max(enemy.stagger_timer, 0.08)
+        enemy.attack_cooldown = max(enemy.attack_cooldown, 0.18)
+    elif spec.behavior == "aggressive_flank":
+        enemy.stagger_timer = max(enemy.stagger_timer, 0.12)
+        enemy.suppression_timer = max(enemy.suppression_timer, 0.32)
+        enemy.attack_cooldown = max(enemy.attack_cooldown, 0.28)
+    elif spec.behavior == "boss_phase":
+        enemy.stagger_timer = max(enemy.stagger_timer, 0.06)
+        enemy.suppression_timer = max(enemy.suppression_timer, 0.18)
+        enemy.attack_cooldown = max(enemy.attack_cooldown, 0.16)
+    else:
+        enemy.stagger_timer = max(enemy.stagger_timer, 0.1)
+        enemy.suppression_timer = max(enemy.suppression_timer, 0.25)
+        enemy.attack_cooldown = max(enemy.attack_cooldown, 0.24)
+
+    enemy.last_health_snapshot = enemy.health
 
 
 def _attack_cadence(spec: EnemyType) -> float:

@@ -20,6 +20,15 @@
         {"type": "assault", "x": 12.5, "y": 7.5},
         {"type": "guard", "x": 6.5, "y": 8.5}
       ]
+    },
+    {
+      "id": "vault_last_stand",
+      "trigger": {"x": 12.5, "y": 8.5, "radius": 1.0},
+      "announcement": "Vault defenders mobilized",
+      "enemy_spawns": [
+        {"type": "assault", "x": 10.5, "y": 6.5},
+        {"type": "hound", "x": 5.5, "y": 8.5}
+      ]
     }
   ]
 }
